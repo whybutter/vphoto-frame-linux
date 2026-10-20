@@ -258,6 +258,7 @@ class Shell:
         self.view.connect("context-menu", lambda *a: True)
         self.view.connect("load-failed", self.on_load_failed)
         self.view.connect("load-changed", self.on_load_changed)
+        self.view.connect("web-process-terminated", self.on_web_process_terminated)
         win.set_child(self.view)
         win.fullscreen()
         win.present()
@@ -284,6 +285,14 @@ class Shell:
             GLib.timeout_add_seconds(10, self.load_page)
             return True
         return False
+
+    def on_web_process_terminated(self, view, reason):
+        # The page's process died (first seen: a JavaScriptCore JIT assertion on
+        # armv7, start.sh). Without this the last frame stays on the glass and
+        # looks like a freeze; reload it -- the flip and the bridge are user
+        # scripts/styles, so they come back with the load.
+        print(f"frame-shell: web process terminated ({reason.value_nick}), reloading", flush=True)
+        GLib.timeout_add_seconds(2, self.load_page)
 
     def on_message(self, ucm, value):
         try:
