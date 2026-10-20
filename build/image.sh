@@ -7,7 +7,7 @@
 # Layout (sunxi BROM fixes the first two):
 #   0       MBR
 #   8 KiB   u-boot-sunxi-with-spl.bin (eGON header; BROM reads it from here)
-#   1 MiB   p1 FAT32 "FRAMEBOOT" 63 MiB: boot.scr, zImage, *.dtb
+#   1 MiB   p1 FAT32 "FRAMEBOOT" 63 MiB: boot.scr, frame-fix.sh, zImage, *.dtb
 #   64 MiB  p2 ext4 rootfs (full only)
 # The MBR disk id is fixed (0xf4a3e001) because the kernel finds its root as
 # PARTUUID=f4a3e001-02 rather than /dev/mmcblk0p2: device numbering is the
@@ -24,7 +24,12 @@ boot=/cache/obj/boot.vfat
 
 rm -f "$img" "$boot"
 mkfs.vfat -C -n FRAMEBOOT -F 32 "$boot" $((63 * 1024)) >/dev/null
+# made here, not taken from the uboot step: a stale out/boot.scr once shipped
+# without the init= hook while U-Boot itself was deliberately not rebuilt
+SOURCE_DATE_EPOCH=0 mkimage -q -A arm -T script -C none -d /work/uboot/boot.cmd $out/boot.scr >/dev/null
 mcopy -i "$boot" $out/boot.scr ::boot.scr
+# boot.scr's init= hook runs it before /sbin/init (build/fat-update.sh)
+mcopy -i "$boot" /work/boot/frame-fix.sh ::frame-fix.sh
 if [ "$stage" = full ]; then
   mcopy -i "$boot" $out/zImage ::zImage
   mcopy -i "$boot" $out/sun8i-a33-vphoto-modern10elite.dtb ::

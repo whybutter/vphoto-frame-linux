@@ -49,6 +49,35 @@ retries. So the next card is built to come up regardless and to report on itself
 - fixed gadget MACs (one enX on the Mac, not a new one per boot), wireless-regdb,
   cfg80211 regdom MX.
 
+Third card test (811ea0eb), from a photo of tty1: **the real cause of all three**.
+OpenRC's boot runlevel aborted in fsck: fstab named /boot as
+PARTUUID=f4a3e001-01, which only the kernel can resolve -- busybox/mdev make no
+/dev/disk/by-partuuid links -- so fsck.fat got a path that doesn't exist and
+fsck's rc-abort stopped the boot. Networking, dropbear, wpa_supplicant and
+frame-diag never ran on any of the three boots (hostname never ran either:
+"(none) login:"). rootfs-test missed it because it commented those fstab lines
+out to mount by hand: the one test that would have caught it, skipped. The card
+also came up as mmcblk1, so device numbering follows probe order.
+- fstab by LABEL (busybox mount resolves it from /proc/partitions), fsck pass 0,
+  nofail on /boot, fsck_abort_on_errors=no.
+- the fix reaches the card as files on FRAMEBOOT (`./build.sh fat-update`):
+  boot.scr now passes `init=/bin/sh -- -c "..."`, which mounts the FAT, runs
+  FRAMEBOOT/frame-fix.sh, and execs /sbin/init; frame-fix.sh unpacks
+  frame-overlay.tar.gz over / once per version (log: diag/fix.txt). Every rootfs
+  fix from here on can be a FAT copy instead of a dd.
+- the hook can't reach the eMMC: its controller (mmc@1c11000) is disabled in
+  our DT, so Linux has no block device for it; the card is the only mmcblk
+  (mmcblk1 on the frame, mmcblk0 in qemu -- the hook tries both).
+- `./build.sh boot-test` now boots the actual card image (+ the FAT update) in
+  qemu vexpress-a9: the real boot.scr through U-Boot's own hush, the kernel's
+  init-arg parsing, the hook, OpenRC with an mdev-only /dev -- twice, so the
+  second boot proves the overlay isn't re-applied. Only the zImage and dtb are
+  vexpress ones. This is the test that would have caught the fsck abort.
+- mdev: "can't create /proc/sys/kernel/hotplug" is CONFIG_UEVENT_HELPER being
+  off. It costs nothing here: devtmpfs creates the device nodes itself, usb0 and
+  wlan0 are netdevs (no /dev node), firmware is loaded by the kernel directly,
+  and the modules are coldplugged by hwdrivers plus modules-load.d.
+
 ```
 tools/bin2fex.py            script.bin -> .fex (sunxi-tools' bin2fex, rewritten in 60
                             lines so the extraction needs nothing but python3)

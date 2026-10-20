@@ -26,7 +26,10 @@ mount -o loop,fmask=0177,dmask=0077 $w/boot.vfat /r/boot
 printf 'ctrl_interface=/var/run/wpa_supplicant\ncountry=MX\nnetwork={\n ssid="TESTNET"\n psk="notreal123"\n}\n' > /r/boot/wpa_supplicant.conf
 ip link add usb0 type dummy
 ssh-keygen -q -t ed25519 -N "" -f /tmp/k; cat /tmp/k.pub >> /r/root/.ssh/authorized_keys
-sed -i 's|^PARTUUID|#PARTUUID|' /r/etc/fstab   # already mounted by hand
+# /boot is mounted by hand here, so localmount's `mount -a` finds it mounted and
+# fsck has nothing to do: this test can't judge fstab. It used to comment the
+# PARTUUID lines out to get this far -- the exact lines that stopped the first
+# three card boots. fstab, fsck and mdev are boot-test's job (a real boot in qemu).
 
 chroot /r /bin/sh -c 'openrc boot; openrc default' > $w/openrc.log 2>&1
 sleep 3
