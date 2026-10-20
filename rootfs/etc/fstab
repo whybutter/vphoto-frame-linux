@@ -1,0 +1,4 @@
+# The card only. The eMMC (mmc2) isn't even enabled in the device tree.
+PARTUUID=f4a3e001-02	/	ext4	rw,noatime	0 1
+PARTUUID=f4a3e001-01	/boot	vfat	rw,noatime,fmask=0177,dmask=0077	0 2
+tmpfs	/tmp	tmpfs	nosuid,nodev	0 0

@@ -16,7 +16,7 @@ for i in 1 2 3; do
 done
 gpio set PH0
 
-setenv bootargs "console=ttyS0,115200 console=tty1 root=/dev/mmcblk0p2 rootwait rw panic=10 loglevel=7 fbcon=rotate:1"
+setenv bootargs "console=ttyS0,115200 console=tty1 root=PARTUUID=f4a3e001-02 rootwait rw panic=10 loglevel=7 fbcon=rotate:1"
 
 if load mmc 0:1 ${kernel_addr_r} zImage; then
   load mmc 0:1 ${fdt_addr_r} sun8i-a33-vphoto-modern10elite.dtb

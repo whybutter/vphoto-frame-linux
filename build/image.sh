@@ -9,6 +9,11 @@
 #   8 KiB   u-boot-sunxi-with-spl.bin (eGON header; BROM reads it from here)
 #   1 MiB   p1 FAT32 "FRAMEBOOT" 63 MiB: boot.scr, zImage, *.dtb
 #   64 MiB  p2 ext4 rootfs (full only)
+# The MBR disk id is fixed (0xf4a3e001) because the kernel finds its root as
+# PARTUUID=f4a3e001-02 rather than /dev/mmcblk0p2: device numbering is the
+# kernel's to choose, a disk id isn't.
+# Wi-Fi: if out/wpa_supplicant.conf exists it is copied onto p1; otherwise the
+# owner drops one onto the FRAMEBOOT volume from the Mac after writing the card.
 # Built entirely in a file with sfdisk + mkfs + mtools: no loop devices, so it
 # runs in an unprivileged container.
 set -eu
@@ -23,6 +28,7 @@ mcopy -i "$boot" $out/boot.scr ::boot.scr
 if [ "$stage" = full ]; then
   mcopy -i "$boot" $out/zImage ::zImage
   mcopy -i "$boot" $out/sun8i-a33-vphoto-modern10elite.dtb ::
+  [ ! -f $out/wpa_supplicant.conf ] || mcopy -i "$boot" $out/wpa_supplicant.conf ::
   rootsz=$(stat -c %s $out/rootfs.ext4)
 else
   rootsz=0
@@ -31,9 +37,9 @@ fi
 total=$((64 * 1024 * 1024 + rootsz))
 truncate -s $total "$img"
 if [ "$stage" = full ]; then
-  printf 'label: dos\nstart=2048, size=129024, type=c\nstart=131072, type=83\n' | sfdisk -q "$img"
+  printf 'label: dos\nlabel-id: 0xf4a3e001\nstart=2048, size=129024, type=c\nstart=131072, type=83\n' | sfdisk -q "$img"
 else
-  printf 'label: dos\nstart=2048, size=129024, type=c\n' | sfdisk -q "$img"
+  printf 'label: dos\nlabel-id: 0xf4a3e001\nstart=2048, size=129024, type=c\n' | sfdisk -q "$img"
 fi
 dd if=$out/u-boot-sunxi-with-spl.bin of="$img" bs=1024 seek=8 conv=notrunc status=none
 dd if="$boot" of="$img" bs=1M seek=1 conv=notrunc status=none

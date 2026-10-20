@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+# Hands the Mac an address on the USB gadget link (/etc/udhcpd.conf), so the
+# frame is reachable at 192.168.7.2 even when Wi-Fi isn't up.
+supervisor=supervise-daemon
+command=/usr/sbin/udhcpd
+command_args="-f /etc/udhcpd.conf"
+
+depend() {
+	need net
+	after networking
+}
+
+start_pre() {
+	touch /var/run/udhcpd.leases
+}
