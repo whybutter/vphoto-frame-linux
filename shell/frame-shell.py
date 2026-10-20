@@ -9,7 +9,7 @@ Without a FRAME-API server the same process is a plain kiosk: it shows
 FRAME_PAGE, darkens the screen after FRAME_AWAKE_S without a touch, and wakes
 on the next one.
 
-Why WebKitGTK and not cog/WPE as the README first planned: Alpine packages no
+Why WebKitGTK and not cog/WPE as docs/bring-up.md first planned: Alpine packages no
 cog and no wpewebkit at all. WebKitGTK is the same engine, packaged, with the
 same script-message bridge; what it costs (GTK4 on a GLES2-only GPU, memory) is
 what milestone 4 measures.

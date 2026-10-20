@@ -5,8 +5,8 @@
  * Built on the A33 reference tablet include, which this board follows closely
  * (AXP223 on RSB, PWM0 backlight on PH0, card detect PB4, Silead on TWI0 @0x40),
  * then corrected wherever the vendor's sys_config says otherwise. Every value
- * below traces to frame-linux/vendor/sys_config.fex or to the vendor modules;
- * the README's "board, pin by pin" table is the index.
+ * below traces to vendor/sys_config.fex or to the vendor modules;
+ * docs/bring-up.md's "board, pin by pin" table is the index.
  */
 
 /dts-v1/;
@@ -68,7 +68,7 @@
 		power-supply = <&reg_dc1sw>;		/* lcd_power = axp22_dc1sw */
 		reset-gpios = <&r_pio 0 5 GPIO_ACTIVE_LOW>; /* PL5, lcd_gpio_0 */
 		backlight = <&backlight>;
-		/* the glass is portrait-native; the page is landscape (README) */
+		/* the glass is portrait-native; the page is landscape (docs/bring-up.md) */
 		rotation = <270>;
 	};
 };
@@ -116,7 +116,7 @@
  * The LRADC carries no buttons on this board: its pin is the "pt3r850" analog
  * light sensor, which the vendor read through a modified sunxi-keyboard module.
  * Off here so lradc-keys doesn't turn light changes into volume presses; the
- * bridge reads it instead (README, "Light sensor").
+ * shell reads it instead (shell/frame-shell.py, class Lradc).
  */
 &lradc {
 	status = "disabled";
