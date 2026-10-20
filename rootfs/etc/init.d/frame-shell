@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+# The cortex page full-screen: cage (Wayland kiosk) running shell/start.sh.
+# Runs as root for now: it writes the backlight, grabs the touchscreen and maps
+# the LRADC through /dev/mem. A single-purpose box, but a candidate for a
+# dedicated user + udev rules once the hardware is proven.
+supervisor=supervise-daemon
+command=/usr/bin/cage
+command_args="-s -- /usr/lib/frame-shell/start.sh"
+output_log=/var/log/frame-shell.log
+error_log=/var/log/frame-shell.log
+respawn_delay=5
+
+depend() {
+	need seatd localmount
+	after networking
+}
+
+start_pre() {
+	export XDG_RUNTIME_DIR=/run/frame-shell
+	mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+}

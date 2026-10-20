@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""The Linux shell for the touch frame: panels/frame/FRAME-API.md, natively.
+
+One process, run by cage (a one-window Wayland kiosk): a full-screen WebKitGTK
+view of the page, plus the native half of the contract -- the screen policy
+loop, the backlight, the touch-wakes-a-dark-screen rule, the sensor report.
+
+Why WebKitGTK and not cog/WPE as the README first planned: Alpine packages no
+cog and no wpewebkit at all. WebKitGTK is the same engine, packaged, with the
+same script-message bridge; what it costs (GTK4 on a GLES2-only GPU, memory) is
+what milestone 4 measures.
+
+The bridge differs from Android's in one way. `@JavascriptInterface` calls are
+synchronous; WebKit's script messages aren't. The four methods that return
+nothing are fire-and-forget anyway; `info()` returns a JS-side copy of the
+readings that this process refreshes every second (debug-only per the
+contract, so a second's staleness is fine).
+
+Config comes from the environment (/etc/conf.d/frame-shell):
+  FRAME_URL      http://<panels-host>:8902      (required)
+  FRAME_TOKEN    PANEL_TOKEN, appended as ?k=   (optional)
+  FRAME_PIR      1 to read the PIR on PG12; this unit has none fitted (README)
+  FRAME_LRADC_CH 0 or 1, which LRADC channel carries the light sensor
+"""
+import json
+import mmap
+import os
+import struct
+import threading
+import time
+import urllib.parse
+import urllib.request
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("WebKit", "6.0")
+from gi.repository import GLib, Gtk, WebKit  # noqa: E402
+
+SHELL = "linux/0.1.0"
+HERE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.environ["FRAME_URL"].rstrip("/")
+TOKEN = os.environ.get("FRAME_TOKEN", "")
+PIR = os.environ.get("FRAME_PIR") == "1"
+LRADC_CH = int(os.environ.get("FRAME_LRADC_CH", "0"))
+
+BACKLIGHT = "/sys/class/backlight/backlight"
+THERMAL = "/sys/class/thermal/thermal_zone0/temp"
+PIR_GPIO = 204  # PG12, as the vendor's bl_h18l232b.ko numbered it
+
+# Defaults until panels answers (FRAME-API §4)
+DEFAULT_POLICY = {"awake_s": 300, "night": False, "force": None, "force_s": 0,
+                  "brightness": None, "report_s": 60}
+
+
+def url(path):
+    return BASE + path + ("?k=" + urllib.parse.quote(TOKEN) if TOKEN else "")
+
+
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def write_text(path, value):
+    try:
+        with open(path, "w") as f:
+            f.write(str(value))
+    except OSError as e:
+        print(f"frame-shell: {path}: {e}", flush=True)
+
+
+class Lradc:
+    """The "pt3r850" light sensor: a phototransistor on the SoC's LRADC.
+
+    Mainline only has lradc-keys (disabled in our DT, it would turn light into
+    volume presses), so the registers are read through /dev/mem. 6-bit reading,
+    0..63, uncalibrated -- trends, not lux, as the contract says.
+    """
+    BASE = 0x01C22800
+    CTRL, DATA0, DATA1 = 0x00, 0x0C, 0x10
+
+    def __init__(self):
+        self.mem = None
+        try:
+            fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
+            page = self.BASE & ~(mmap.PAGESIZE - 1)
+            self.off = self.BASE - page
+            self.mem = mmap.mmap(fd, mmap.PAGESIZE, offset=page)
+            os.close(fd)
+            # continuous mode, both channels, enabled (bit names from sun4i-lradc-keys.c)
+            ctrl = (2 << 24) | (3 << 22) | (2 << 12) | (0 << 2) | 1
+            struct.pack_into("<I", self.mem, self.off + self.CTRL, ctrl)
+        except OSError as e:
+            print(f"frame-shell: no LRADC ({e}); lux won't be reported", flush=True)
+
+    def read(self):
+        if self.mem is None:
+            return None
+        reg = self.DATA1 if LRADC_CH else self.DATA0
+        return struct.unpack_from("<I", self.mem, self.off + reg)[0] & 0x3F
+
+
+def read_pir():
+    if not PIR:
+        return None
+    v = read_text(f"/sys/class/gpio/gpio{PIR_GPIO}/value")
+    return None if v is None else v == "1"
+
+
+class Touch:
+    """Reads the Silead touchscreen beside libinput, and takes it away from
+    libinput (EVIOCGRAB) while the screen is dark, so the touch that wakes the
+    screen never reaches the page (FRAME-API §4.2)."""
+
+    def __init__(self, on_touch):
+        self.on_touch = on_touch
+        self.dev = None
+        self.grabbed = False
+        self.want_grab = False
+        self.finger_down = False
+        try:
+            import evdev
+            for path in evdev.list_devices():
+                d = evdev.InputDevice(path)
+                if "silead" in d.name.lower() or "gsl" in d.name.lower():
+                    self.dev = d
+                    break
+        except Exception as e:  # no py3-evdev, no device: degrade, don't die
+            print(f"frame-shell: no touch device ({e})", flush=True)
+        if self.dev:
+            threading.Thread(target=self._loop, daemon=True).start()
+
+    def set_grab(self, grab):
+        if not self.dev:
+            return
+        self.want_grab = grab
+        if grab and not self.grabbed:
+            self._grab(True)
+        # woken by something other than a touch (an HA hold, the PIR): let go
+        # now, or the next touch would be swallowed as a "wake" touch
+        elif not grab and self.grabbed and not self.finger_down:
+            self._grab(False)
+
+    def _grab(self, grab):
+        try:
+            self.dev.grab() if grab else self.dev.ungrab()
+            self.grabbed = grab
+        except OSError:
+            pass
+
+    def _loop(self):
+        from evdev import ecodes
+        for ev in self.dev.read_loop():
+            if ev.type == ecodes.EV_KEY and ev.code == ecodes.BTN_TOUCH:
+                self.finger_down = ev.value == 1
+                if ev.value == 1:
+                    GLib.idle_add(self.on_touch)
+                # release the grab only once the waking finger is up, so the
+                # page never sees half a gesture
+                elif ev.value == 0 and self.grabbed and not self.want_grab:
+                    self._grab(False)
+
+
+class Shell:
+    def __init__(self, app):
+        self.app = app
+        self.policy = dict(DEFAULT_POLICY)
+        self.policy_at = time.monotonic()
+        self.last_activity = time.monotonic()
+        self.page_brightness = -1.0
+        self.screen = None
+        self.brightness = None
+        self.motion = None
+        self.last_report = 0.0
+        self.page_loaded = False
+        self.lradc = Lradc()
+        self.touch = Touch(self.on_touch)
+        self.max_bl = int(read_text(BACKLIGHT + "/max_brightness") or 10)
+        if PIR and not os.path.exists(f"/sys/class/gpio/gpio{PIR_GPIO}"):
+            write_text("/sys/class/gpio/export", PIR_GPIO)
+
+    # --- the page --------------------------------------------------------
+
+    def build(self):
+        win = Gtk.ApplicationWindow(application=self.app)
+        ucm = WebKit.UserContentManager()
+        ucm.register_script_message_handler("cortex", None)
+        ucm.connect("script-message-received::cortex", self.on_message)
+        with open(os.path.join(HERE, "bridge.js")) as f:
+            ucm.add_script(WebKit.UserScript.new(
+                f.read(), WebKit.UserContentInjectedFrames.TOP_FRAME,
+                WebKit.UserScriptInjectionTime.START, None, None))
+        self.view = WebKit.WebView(user_content_manager=ucm)
+        s = self.view.get_settings()
+        s.set_enable_developer_extras(False)
+        s.set_enable_back_forward_navigation_gestures(False)
+        self.view.connect("context-menu", lambda *a: True)
+        self.view.connect("load-failed", self.on_load_failed)
+        self.view.connect("load-changed", self.on_load_changed)
+        win.set_child(self.view)
+        win.fullscreen()
+        win.present()
+        self.load_page()
+        GLib.timeout_add_seconds(1, self.tick)
+
+    def load_page(self):
+        self.page_loaded = False
+        self.view.load_uri(url("/frame"))
+        return False
+
+    def on_load_changed(self, view, event):
+        if event == WebKit.LoadEvent.FINISHED and view.get_uri().startswith(BASE):
+            self.page_loaded = True
+
+    def on_load_failed(self, view, event, uri, error):
+        # FRAME-API §1: our own "can't reach panels" screen, retry every ~10 s
+        if uri.startswith(BASE):
+            print(f"frame-shell: page failed: {error.message}", flush=True)
+            view.load_uri("file://" + os.path.join(HERE, "offline.html"))
+            GLib.timeout_add_seconds(10, self.load_page)
+            return True
+        return False
+
+    def on_message(self, ucm, value):
+        try:
+            msg = json.loads(value.to_string())
+        except ValueError:
+            return
+        m, a = msg.get("m"), msg.get("a")
+        if m == "policy":
+            self.apply_policy(a)
+        elif m == "screenOff":
+            # dark now; motion or a touch wakes it as usual
+            self.last_activity = -1e9
+            self.policy["force"] = None
+        elif m == "setBrightness":
+            self.page_brightness = float(a)
+        elif m == "reload":
+            self.view.reload()
+
+    # --- policy (FRAME-API §4) ---------------------------------------------
+
+    def apply_policy(self, p):
+        if isinstance(p, str):
+            try:
+                p = json.loads(p)
+            except ValueError:
+                return
+        if isinstance(p, dict):
+            self.policy = {**DEFAULT_POLICY, **p}
+            self.policy_at = time.monotonic()
+
+    def on_touch(self):
+        self.last_activity = time.monotonic()
+        return False
+
+    def want_screen(self, now):
+        p = self.policy
+        if p.get("force") in ("on", "off") and now - self.policy_at < (p.get("force_s") or 0):
+            return p["force"] == "on"
+        return now - self.last_activity < p.get("awake_s", 300)
+
+    def want_brightness(self):
+        if self.page_brightness >= 0:
+            return min(self.page_brightness, 1.0)
+        b = self.policy.get("brightness")
+        return 1.0 if b is None else float(b)
+
+    def set_backlight(self, on, level):
+        if on:
+            write_text(BACKLIGHT + "/brightness", max(1, round(level * self.max_bl)))
+            write_text(BACKLIGHT + "/bl_power", 0)
+        else:
+            write_text(BACKLIGHT + "/bl_power", 4)
+
+    # --- the 1 s loop ------------------------------------------------------
+
+    def tick(self):
+        now = time.monotonic()
+        motion = read_pir()
+        edge = motion is not None and motion != self.motion
+        self.motion = motion
+        if motion:
+            self.last_activity = now
+
+        on, level = self.want_screen(now), self.want_brightness()
+        changed = on != self.screen
+        if changed or (on and level != self.brightness):
+            self.set_backlight(on, level)
+        self.touch.set_grab(not on)
+        self.screen, self.brightness = on, level
+
+        readings = self.readings()
+        self.view.evaluate_javascript(
+            "window.__cortexInfo = %s;" % json.dumps(json.dumps(readings)),
+            -1, None, None, None, None, None)
+
+        if edge or changed or now - self.last_report >= self.policy.get("report_s", 60):
+            self.last_report = now
+            threading.Thread(target=self.report, args=(readings,), daemon=True).start()
+        return True
+
+    def readings(self):
+        t = read_text(THERMAL)
+        r = {"shell": SHELL, "screen": self.screen, "brightness": self.brightness,
+             "lux": self.lradc.read(),
+             "soc_temp": None if t is None else round(int(t) / 1000, 1),
+             "uptime": int(time.monotonic())}
+        if self.motion is not None:
+            r["motion"] = self.motion
+        return {k: v for k, v in r.items() if v is not None}
+
+    def report(self, readings):
+        # fire and forget; a failed report is retried at the next one (§3)
+        req = urllib.request.Request(
+            url("/frame/api/report"), data=json.dumps(readings).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                policy = json.loads(r.read() or b"{}")
+            GLib.idle_add(self.apply_policy, policy)
+        except Exception as e:
+            print(f"frame-shell: report failed: {e}", flush=True)
+
+
+def main():
+    app = Gtk.Application(application_id="mx.cortex.frame")
+    app.connect("activate", lambda a: Shell(a).build())
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()

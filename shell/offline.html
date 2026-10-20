@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- FRAME-API §1: the shell's own screen while panels can't be reached.
+     The shell retries the real page every 10 s; nothing here needs the network. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>frame offline</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #9a9a9a;
+               font: 32px/1.4 "DejaVu Sans", sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; text-align: center; }
+  small { display: block; font-size: 20px; color: #666; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <div>Can't reach panels<small>retrying every 10 seconds</small></div>
+</body>
+</html>

@@ -12,7 +12,7 @@ set -eu
 . /work/build/versions.env
 out=/work/out
 root=/tmp/rootfs
-size_mb=${ROOTFS_MB:-768}
+size_mb=${ROOTFS_MB:-1536}
 
 [ -s $out/authorized_keys ] || { echo "out/authorized_keys missing (cp ~/.ssh/id_*.pub out/authorized_keys)"; exit 1; }
 
@@ -24,7 +24,9 @@ apk add -q --root $root --initdb --arch armv7 --no-cache \
   alpine-base openrc busybox-openrc busybox-extras \
   dropbear dropbear-openrc wpa_supplicant wpa_supplicant-openrc \
   chrony chrony-openrc iw linux-firmware-rtw88 \
-  e2fsprogs dosfstools
+  e2fsprogs dosfstools \
+  cage seatd seatd-openrc wlr-randr mesa-dri-gallium mesa-egl mesa-gles \
+  webkit2gtk-6.0 python3 py3-gobject3 py3-evdev font-dejavu
 
 apk info --root $root -v 2>/dev/null | sort > $out/rootfs.packages
 
@@ -32,6 +34,9 @@ apk info --root $root -v 2>/dev/null | sort > $out/rootfs.packages
 cp -a /work/rootfs/. $root/
 tar -C $root -xzf $out/modules.tar.gz
 cp -a $out/firmware/. $root/lib/firmware/
+install -d $root/usr/lib/frame-shell
+install -m 644 /work/shell/frame-shell.py /work/shell/bridge.js /work/shell/offline.html $root/usr/lib/frame-shell/
+install -m 755 /work/shell/start.sh $root/usr/lib/frame-shell/
 install -d -m 700 $root/root/.ssh
 install -m 600 $out/authorized_keys $root/root/.ssh/authorized_keys
 
@@ -45,7 +50,7 @@ sed -i 's|^root:[^:]*:|root:*:|' $root/etc/shadow
 chroot $root /bin/sh -e <<'EOF'
 for s in devfs dmesg mdev hwdrivers; do rc-update -q add $s sysinit; done
 for s in modules sysctl hostname bootmisc syslog swclock seedrng; do rc-update -q add $s boot; done
-for s in networking wpa_supplicant dropbear chronyd usb-dhcpd; do rc-update -q add $s default; done
+for s in networking wpa_supplicant dropbear chronyd usb-dhcpd seatd frame-shell; do rc-update -q add $s default; done
 for s in mount-ro killprocs savecache; do rc-update -q add $s shutdown; done
 EOF
 

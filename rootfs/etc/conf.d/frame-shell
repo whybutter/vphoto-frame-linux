@@ -1,0 +1,9 @@
+# FRAME-API.md "Base URL and auth". Dev panels runs on the Mac with no token.
+export FRAME_URL="http://<panels-host>:8902"
+export FRAME_TOKEN=""
+# wlr-randr transform for the landscape page on the portrait glass (start.sh)
+export FRAME_ROTATE="90"
+# the PIR isn't fitted on this unit (README); 1 would read PG12
+export FRAME_PIR="0"
+export FRAME_LRADC_CH="0"
+export XDG_RUNTIME_DIR=/run/frame-shell
