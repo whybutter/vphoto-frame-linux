@@ -4,8 +4,11 @@
 #     FRAME_URL="https://<panels host>"     (FRAME-API.md "Base URL and auth")
 #     FRAME_TOKEN="<PANEL_TOKEN>"
 # Without it the shell doesn't start (and says so), the glass keeps the console.
+# Everything it sets is exported (set -a), so any FRAME_* switch in the shell's
+# docstring can be turned on from the card -- e.g. FRAME_DEBUG_TOUCH=1.
+set -a
 [ -r /boot/frame-shell.conf ] && . /boot/frame-shell.conf
-export FRAME_URL FRAME_TOKEN
+set +a
 # wlr-randr transform for the landscape page on the portrait glass (start.sh)
 export FRAME_ROTATE="${FRAME_ROTATE:-90}"
 # the PIR isn't fitted on this unit (README); 1 would read PG12

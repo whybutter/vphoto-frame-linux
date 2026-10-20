@@ -24,6 +24,7 @@ card's FRAMEBOOT/frame-shell.conf -- the URL and token never live in git):
   FRAME_LRADC_CH 0 or 1, which LRADC channel carries the light sensor
   FRAME_CALIBRATE 1 loads calibrate.html instead of the page: orientation
                  marks and touch points, logged to the shell's log
+  FRAME_DEBUG_TOUCH 1 logs every touch/pointer/click the page gets (touchdebug.js)
   FRAME_AUTOFLIP 0 to keep the page as start.sh rotates it, whichever way up
                  the frame is (default 1: the accelerometer decides)
 """
@@ -50,6 +51,7 @@ PIR = os.environ.get("FRAME_PIR") == "1"
 LRADC_CH = int(os.environ.get("FRAME_LRADC_CH", "0"))
 CALIBRATE = os.environ.get("FRAME_CALIBRATE") == "1"
 AUTOFLIP = os.environ.get("FRAME_AUTOFLIP", "1") == "1"
+DEBUG_TOUCH = os.environ.get("FRAME_DEBUG_TOUCH") == "1"
 
 BACKLIGHT = "/sys/class/backlight/backlight"
 THERMAL = "/sys/class/thermal/thermal_zone0/temp"
@@ -242,6 +244,14 @@ class Shell:
     # --- the page --------------------------------------------------------
 
     def build(self):
+        # The Silead reports a resting finger drifting 10-25 px over a 100-200 ms
+        # tap (the vendor's closed filter library smoothed it on Android). With
+        # GTK's 8 px default a tap became a drag and the button never got its
+        # click (FRAME_DEBUG_TOUCH logs: clicks only when moved <= 8 px). The page
+        # is fixed-size with nothing to scroll, so a generous threshold costs
+        # nothing.
+        Gtk.Settings.get_default().set_property(
+            "gtk-dnd-drag-threshold", int(os.environ.get("FRAME_TAP_SLOP", "40")))
         win = Gtk.ApplicationWindow(application=self.app)
         ucm = WebKit.UserContentManager()
         ucm.register_script_message_handler("cortex", None)
@@ -250,6 +260,11 @@ class Shell:
             ucm.add_script(WebKit.UserScript.new(
                 f.read(), WebKit.UserContentInjectedFrames.TOP_FRAME,
                 WebKit.UserScriptInjectionTime.START, None, None))
+        if DEBUG_TOUCH:
+            with open(os.path.join(HERE, "touchdebug.js")) as f:
+                ucm.add_script(WebKit.UserScript.new(
+                    f.read(), WebKit.UserContentInjectedFrames.TOP_FRAME,
+                    WebKit.UserScriptInjectionTime.START, None, None))
         self.ucm = ucm
         self.view = WebKit.WebView(user_content_manager=ucm)
         s = self.view.get_settings()
@@ -310,7 +325,7 @@ class Shell:
             self.page_brightness = float(a)
         elif m == "reload":
             self.view.reload()
-        elif m == "log":  # calibrate.html
+        elif m == "log":  # calibrate.html, touchdebug.js
             print(f"frame-shell: page: {a}", flush=True)
 
     # --- policy (FRAME-API §4) ---------------------------------------------

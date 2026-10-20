@@ -361,3 +361,15 @@ so the card stays rebuildable:
   back above +5. The first version had the sign backwards: the frame had been
   turned midway through calibration, so the reading belonged to the other
   position. Checked both ways on the glass.
+- **the freeze**: JavaScriptCore's armv7 JIT asserted minutes into the live
+  page (CallFrameShuffler, `JSC::CachedRecovery ... '__n < this->size()'`)
+  and killed the web process; the last picture stayed up. start.sh exports
+  JSC_useJIT=false (the interpreter is enough for this page: ~0-2% CPU at
+  rest), and the shell reloads the page if the web process dies anyway.
+- **taps that didn't take**: the Silead reports a resting finger drifting
+  10-25 px during a 100-200 ms tap (the vendor's closed filter library hid it
+  on Android); with GTK's 8 px drag threshold those taps became drags with no
+  click. FRAME_DEBUG_TOUCH=1 (on the card) logs every touch; with
+  gtk-dnd-drag-threshold at 40 (FRAME_TAP_SLOP) 17 of 17 taps clicked. Left
+  over: the click lands where the finger lifted, so a drift can still pick a
+  neighbouring small button -- a stabilizing evdev proxy would fix that.

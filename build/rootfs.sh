@@ -35,7 +35,7 @@ cp -a /work/rootfs/. $root/
 tar -C $root -xzf $out/modules.tar.gz
 cp -a $out/firmware/. $root/lib/firmware/
 install -d $root/usr/lib/frame-shell
-install -m 644 /work/shell/frame-shell.py /work/shell/bridge.js /work/shell/offline.html /work/shell/calibrate.html $root/usr/lib/frame-shell/
+install -m 644 /work/shell/frame-shell.py /work/shell/bridge.js /work/shell/offline.html /work/shell/calibrate.html /work/shell/touchdebug.js $root/usr/lib/frame-shell/
 install -m 755 /work/shell/start.sh $root/usr/lib/frame-shell/
 install -d -m 700 $root/root/.ssh
 install -m 600 $out/authorized_keys $root/root/.ssh/authorized_keys
