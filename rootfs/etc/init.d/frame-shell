@@ -16,6 +16,13 @@ depend() {
 }
 
 start_pre() {
+	# Opt-in from the Mac while the hardware is being brought up: cage takes the
+	# glass, and with it the login prompt that frame-diag's status block sits
+	# above. `touch /Volumes/FRAMEBOOT/frame-shell.enable` turns the page on.
+	if [ ! -e /boot/frame-shell.enable ]; then
+		einfo "frame-shell off (no /boot/frame-shell.enable)"
+		return 1
+	fi
 	export XDG_RUNTIME_DIR=/run/frame-shell
 	mkdir -p -m 700 "$XDG_RUNTIME_DIR"
 }

@@ -1,0 +1,8 @@
+# -s: log to syslog (frame-diag copies it, SSIDs masked). The interface is named
+# so a late wlan0 is a respawn, not "Could not find a wireless interface" and a
+# dead service; the config is /etc/wpa_supplicant/wpa_supplicant.conf, a link
+# to /boot/wpa_supplicant.conf on the card's FAT (written from the Mac).
+wpa_supplicant_args="-s"
+wpa_supplicant_if="wlan0"
+respawn_delay=5
+respawn_max=0

@@ -28,6 +28,27 @@ already on the card still load, and the dtb is byte-identical to the card's.
 There is no console login on purpose (root is locked, the frame has no keyboard):
 the ways in are SSH over USB or Wi-Fi.
 
+Second card test (ECM zImage): macOS now binds the gadget (en15) but reports it
+"inactive", and Wi-Fi didn't join either. On ECM the gadget only signals a
+connection once usb0 is opened, so usb0 was never brought up -- and with neither
+way in nor a console, the card couldn't say why. Offline (`./build.sh
+rootfs-test`), the same interfaces file brings usb0 up fine; what it also showed
+is that `ifup` of an interface that doesn't exist *yet* fails once and nothing
+retries. So the next card is built to come up regardless and to report on itself:
+- `frame-netwait` waits (bounded, never failing) for usb0 and wlan0 before
+  networking; `usb-dhcpd` brings usb0 up itself and no longer `need`s all of
+  networking; wpa_supplicant names wlan0 and respawns until it appears.
+- `frame-diag` writes /boot/diag/{early,boot,60s,180s,now}.txt on the FAT
+  (dmesg, addresses, rc-status, rc.log, syslog, udc state, lsmod, iw, wpa state,
+  SSIDs masked, the conf never copied) and a status block above the login prompt.
+- `/boot/frame-run.sh`, if present, runs once per boot as root into
+  /boot/diag/run.txt: the console stand-in. Off unless the file is put there.
+  (A tty1 autologin would be useless: the OTG port is the gadget, so no keyboard.)
+- the page (frame-shell) only starts with /boot/frame-shell.enable, so cage
+  doesn't cover the status block while the hardware is brought up.
+- fixed gadget MACs (one enX on the Mac, not a new one per boot), wireless-regdb,
+  cfg80211 regdom MX.
+
 ```
 tools/bin2fex.py            script.bin -> .fex (sunxi-tools' bin2fex, rewritten in 60
                             lines so the extraction needs nothing but python3)

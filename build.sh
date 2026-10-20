@@ -7,6 +7,7 @@
 #   ./build.sh kernel       out/zImage, out/*.dtb, out/modules.tar.gz
 #   ./build.sh vendor       touch firmware cut from the eMMC backup (read-only mount)
 #   ./build.sh rootfs       out/rootfs.ext4 (Alpine armv7, in an emulated armv7 container)
+#   ./build.sh rootfs-test  boots its OpenRC runlevels in a chroot and checks the way in
 #   ./build.sh image m1|full  out/frame-linux-<stage>.img
 #   ./build.sh shell        a shell in the build container
 #
@@ -21,7 +22,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 docker build -q -t frame-linux-build "$here/build" >/dev/null
 step=${1:-}
-[ -n "$step" ] || { sed -n '4,12p' "$0"; exit 1; }
+[ -n "$step" ] || { sed -n '4,13p' "$0"; exit 1; }
 shift
 # The eMMC backup, read-only: the vendor step cuts blobs out of it.
 backup=${FRAME_BACKUP:-./backup/partitions}
@@ -31,6 +32,11 @@ if [ "$step" = rootfs ]; then
   # so this one step runs in Docker's emulated linux/arm/v7.
   . "$here/build/versions.env"
   exec docker run --rm --platform linux/arm/v7 $vols alpine:${ALPINE_BRANCH#v} sh /work/build/rootfs.sh "$@"
+fi
+if [ "$step" = rootfs-test ]; then
+  # same emulation, privileged for loop mounts and a dummy usb0
+  . "$here/build/versions.env"
+  exec docker run --rm --privileged --platform linux/arm/v7 $vols alpine:${ALPINE_BRANCH#v} sh /work/build/rootfs-test.sh "$@"
 fi
 if [ "$step" = shell ]; then
   exec docker run --rm -it $vols frame-linux-build bash

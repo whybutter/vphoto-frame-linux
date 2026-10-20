@@ -23,7 +23,7 @@ printf '%s\n' "$ALPINE_MIRROR/$ALPINE_BRANCH/main" "$ALPINE_MIRROR/$ALPINE_BRANC
 apk add -q --root $root --initdb --arch armv7 --no-cache \
   alpine-base openrc busybox-openrc busybox-extras \
   dropbear dropbear-openrc wpa_supplicant wpa_supplicant-openrc \
-  chrony chrony-openrc iw linux-firmware-rtw88 \
+  chrony chrony-openrc iw linux-firmware-rtw88 wireless-regdb \
   e2fsprogs dosfstools \
   cage seatd seatd-openrc wlr-randr mesa-dri-gallium mesa-egl mesa-gles \
   webkit2gtk-6.0 python3 py3-gobject3 py3-evdev font-dejavu
@@ -47,10 +47,14 @@ ln -sf /boot/wpa_supplicant.conf $root/etc/wpa_supplicant/wpa_supplicant.conf
 # root has no password at all: dropbear is key-only and the panel has no keyboard
 sed -i 's|^root:[^:]*:|root:*:|' $root/etc/shadow
 
+# every service's output in /var/log/rc.log, which frame-diag copies to the card
+sed -i 's|^#\?rc_logger=.*|rc_logger="YES"|' $root/etc/rc.conf
+grep -qx 'rc_logger="YES"' $root/etc/rc.conf
+
 chroot $root /bin/sh -e <<'EOF'
 for s in devfs dmesg mdev hwdrivers; do rc-update -q add $s sysinit; done
-for s in modules sysctl hostname bootmisc syslog swclock seedrng; do rc-update -q add $s boot; done
-for s in networking wpa_supplicant dropbear chronyd usb-dhcpd seatd frame-shell; do rc-update -q add $s default; done
+for s in modules sysctl hostname localmount bootmisc syslog swclock seedrng frame-diag-early; do rc-update -q add $s boot; done
+for s in frame-netwait networking wpa_supplicant dropbear chronyd usb-dhcpd seatd frame-shell frame-diag; do rc-update -q add $s default; done
 for s in mount-ro killprocs savecache; do rc-update -q add $s shutdown; done
 EOF
 
