@@ -12,8 +12,10 @@ Shared ground truth for the device (access rules, the backup, who may reboot it)
 device**: every number below came from copies of the backup images or from read-only
 adb (`cat`, `dumpsys`, `/sys/kernel/debug`), never from a write.
 
-Status: **Phase 1 (research) done, nothing built yet.** Phase 2 waits for the owner's
-go-ahead on the direction in "Recommendation" below.
+Status (2026-10-19): Phase 1 done; the owner approved the direction. Phase 2 builds
+U-Boot, the kernel (with our panel driver and board DT), an Alpine rootfs and the card
+image, all reproducibly in Docker (see "Building"). **Nothing has run on the frame
+yet**: milestones 1-2 are waiting on a card in the slot.
 
 ```
 tools/bin2fex.py            script.bin -> .fex (sunxi-tools' bin2fex, rewritten in 60
@@ -65,7 +67,7 @@ GPIO numbers in the vendor kernel are `32 * port + pin`, PA = 0 ... PL = 11 (PL0
 | Timings | dclk 77 MHz, ht 980, hbp 100 (incl. hspw 20), vt 1316, vbp 16 (incl. vspw 4) | 800+80+20+80 / 1280+20+4+12 → 59.7 Hz |
 | Backlight | PWM ch0 on **PH0**, 50 kHz, enable **PL4** active high | exactly the A33 reference tablet (`sun8i-reference-design-tablet.dtsi`) |
 | Touch | Silead `gslX680_juhong101`, **TWI0 (PH2/PH3) @ 0x40**, irq **PB5**, wake/power **PH1**, vdd `ldoio1` 3.3 V; swap x/y + invert x | `silead,gsl1680`, `touchscreen-swapped-x-y`, `touchscreen-inverted-x` |
-| PIR | **PG12** (gpio 204), plain input, *polled* by a timer in `bl_h18l232b.ko` ("BL-H18L232B-2 human sensor", Regan Yuan @ococci) — `/sys/class/humansensor/sleepmode` is that pin | needs nothing but `gpiod` |
+| PIR | **PG12** (gpio 204), plain input, *polled* by a timer in `bl_h18l232b.ko` ("BL-H18L232B-2 human sensor", Regan Yuan @ococci) — `/sys/class/humansensor/sleepmode` is that pin. **Not fitted on this unit**: the owner waved at it for 2 min and it stayed 0, and `ro.fullja.human_sensor=0` | needs nothing but `gpiod`; touch is the only wake source here |
 | Light | "pt3r850" is **not an I2C chip**: it is an analog phototransistor on the **LRADC**, read by the vendor's hacked `sunxi-keyboard.ko` (input `pt3r850-lsensor`, ABS_MISC 0..200, read 94 indoors) | needs a driver, see below |
 | "Ambient temperature" | Android's `AW.` temperature sensor is input `sunxi-ths` = the **SoC die thermal sensor** (read 45 °C) | not a room thermometer — see FRAME-FACTS fix |
 | Wi-Fi | RTL8723DS SDIO on **mmc1** (PG0-PG5), `wl_reg_on` **PL6**, host-wake **PL7** | `mmc-pwrseq-simple` reset PL6 active-low |
@@ -123,7 +125,7 @@ one by name is why `panel-init-extract.py` scopes the symbol lookup to the panel
 | BT | works (not needed) | `hci_uart` Realtek serdev + `rtl_bt/rtl8723ds_*`. |
 | Touch (Silead) | needs DT + firmware | `silead.c` loads exactly the vendor's `{u32 offset, u32 val}` array (4818 words, md5 b74d4960...). Risk: the vendor also feeds a closed `gsl_point_id` filter with `gsl_config_data_id_Juhong101`; mainline has no equivalent, so jitter/ghost touches are possible. |
 | PIR | needs DT only (or nothing) | a GPIO; `gpio-keys` with polling, or the bridge reads it with libgpiod. |
-| Light sensor | **needs a driver** | Mainline `sun4i-lradc-keys` only turns LRADC into keys. Options: a ~100-line IIO driver for the LRADC, or the bridge reading LRADC_DATA from `/dev/mem` (0x01c21800). The channel (0 or 1) is still to be confirmed on hardware. |
+| Light sensor | **needs a driver** | Mainline `sun4i-lradc-keys` only turns LRADC into keys. Options: a ~100-line IIO driver for the LRADC, or the bridge reading LRADC_DATA from `/dev/mem` (LRADC at 0x01c22800, per `sun8i-a23-a33.dtsi`; Phase 1 said 0x01c21800, which was wrong). The channel (0 or 1) is still to be confirmed on hardware. |
 | Temperature | works, but it's the SoC | `sun8i-thermal` (`sun8i-a33-ths`). There is no room thermometer on this board. |
 | AXP223 | works | `axp20x-rsb`, regulators, PEK; `ldo_io1` regulator for the touch. |
 | Audio | works (not needed) | `sun8i-codec` + analog, as on the Q8 tablets. |
@@ -155,9 +157,21 @@ of cog with the real page and reports it before anything else is built on top.
 **The distro.** Buildroot is the reproducible choice but means compiling WebKit (hours,
 in a Docker VM on this Mac) on every toolchain bump. **Recommendation: our own
 U-Boot + mainline kernel (built in Docker from pinned tags), with an Alpine armv7
-userspace** — Alpine ships `cog`, `wpewebkit`, Mesa with lima and `linux-firmware-rtw88`
-as packages, so the only things we compile are the bootloader, the kernel (with the
-panel driver) and the bridge. Rootfs is assembled by a script from pinned `apk` versions;
+userspace** — Phase 1 said Alpine ships `cog`, `wpewebkit`, Mesa with lima and
+`linux-firmware-rtw88` as packages, so the only things we compile are the bootloader,
+the kernel (with the panel driver) and the bridge.
+
+*That was half wrong, found while building the rootfs:* Alpine ships Mesa with lima,
+`linux-firmware-rtw88`, `cage` (a Wayland kiosk compositor), WebKitGTK
+(`webkit2gtk-6.0`) and Chromium for armv7, but **no `cog` and no `wpewebkit` on any
+branch or architecture** (checked v3.22, v3.23, edge; armv7 and aarch64). The engine
+is the same WebKit either way; what changes is the wrapper. Options, in the order I'd
+try them: (1) `cage` + a ~100-line WebKitGTK kiosk window (same script-message bridge
+as WPE, packaged, nothing to compile; heavier than WPE and GTK4 may fall back to its
+software renderer on a GLES2-only GPU — that is what milestone 4 has to measure);
+(2) Chromium under `cage`, the packaged fallback; (3) WPE + cog cross-built ourselves
+(Buildroot has both), the hours-of-WebKit-compile path this recommendation was trying
+to avoid. The rest of the plan (Alpine base, own kernel) stands. Rootfs is assembled by a script from pinned `apk` versions;
 the card image is the output, never committed. postmarketOS was the other candidate
 (Alpine underneath, same packages) but adds its own device-package workflow for no gain
 on a single board.
@@ -212,6 +226,35 @@ Later / maybe never: BT, audio, the IR remote, the accelerometer's auto-rotate, 
 3. **Touch filtering** without the closed gsl library (see above).
 4. **Light sensor** needs our own small driver or a `/dev/mem` read.
 5. **Engine memory** on 1 GB: to be measured, not assumed.
+
+## Building
+
+Everything runs in Docker (Docker Desktop on this Mac; `open -a Docker` if its engine
+is down). Nothing is compiled on the host. Inputs are pinned in `build/versions.env`.
+
+```bash
+./build.sh fetch          # pinned U-Boot, kernel, sunxi-tools sources (out/dl + a docker volume)
+./build.sh sunxi-tools    # sunxi-fel, fel-sdboot.sunxi (USB can't reach Docker on macOS; see the script)
+./build.sh uboot          # out/u-boot-sunxi-with-spl.bin, out/boot.scr
+./build.sh kernel         # out/zImage, out/sun8i-a33-vphoto-modern10elite.dtb, out/modules.tar.gz
+./build.sh vendor         # touch firmware, cut from the eMMC backup (mounted read-only)
+cp ~/.ssh/id_*.pub out/authorized_keys
+./build.sh rootfs         # out/rootfs.ext4 (Alpine armv7, in Docker's emulated arm/v7)
+./build.sh image m1       # 64 MiB card: U-Boot + boot.scr only
+./build.sh image full     # ~830 MiB card: + kernel, dtb, rootfs
+```
+
+Times on this Mac: kernel ~3 min from cold, U-Boot ~1 min, rootfs ~20 s. Sources and
+object trees live in the Docker volume `frame-linux-cache`, not under `out/`: the
+first attempt unpacked the kernel onto the bind mount and macOS's case-insensitive
+filesystem collided `xt_TCPMSS.h` with `xt_tcpmss.h`.
+
+Card layout: MBR (disk id fixed at 0xf4a3e001, so root is `PARTUUID=f4a3e001-02`),
+U-Boot at 8 KiB, `FRAMEBOOT` FAT32 at 1 MiB (boot.scr, zImage, dtb, and the owner's
+`wpa_supplicant.conf` — Wi-Fi credentials never pass through this repo), ext4 root at
+64 MiB. The frame is also `192.168.7.2` over the USB cable (Ethernet gadget, DHCP
+hands the Mac `.1`), so SSH works before Wi-Fi does. Root has no password; dropbear
+takes the key from `out/authorized_keys`.
 
 ## Seeing it boot
 
