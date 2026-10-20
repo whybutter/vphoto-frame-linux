@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * VPhoto "Modern 10 Elite" photo frame (Joyhong "astar_ococci" board, A33).
+ *
+ * Built on the A33 reference tablet include, which this board follows closely
+ * (AXP223 on RSB, PWM0 backlight on PH0, card detect PB4, Silead on TWI0 @0x40),
+ * then corrected wherever the vendor's sys_config says otherwise. Every value
+ * below traces to frame-linux/vendor/sys_config.fex or to the vendor modules;
+ * the README's "board, pin by pin" table is the index.
+ */
+
+/dts-v1/;
+#include "sun8i-a33.dtsi"
+#include "sun8i-reference-design-tablet.dtsi"
+
+/ {
+	model = "VPhoto Modern 10 Elite";
+	compatible = "vphoto,modern10elite", "allwinner,sun8i-a33";
+
+	aliases {
+		/* U-Boot fills the Wi-Fi MAC from the SID through this alias */
+		ethernet0 = &sdio_wifi;
+	};
+
+	wifi_pwrseq: pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		/* [wifi_para] wl_reg_on = PL6, high = on */
+		reset-gpios = <&r_pio 0 6 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <50>;
+	};
+};
+
+/*
+ * [lcd0_para] lcd_bl_en = PL4 (the reference tablet uses PH6), lcd_pwm_pol = 0.
+ * The reference tablet inverts the PWM; the vendor config says active-high here.
+ * If brightness comes out backwards on the glass, this flag is the one to flip.
+ */
+&backlight {
+	pwms = <&pwm 0 50000 0>;
+	enable-gpios = <&r_pio 0 4 GPIO_ACTIVE_HIGH>; /* PL4 */
+	default-brightness-level = <10>;
+};
+
+&de {
+	status = "okay";
+};
+
+&tcon0 {
+	status = "okay";
+};
+
+&dphy {
+	status = "okay";
+};
+
+/*
+ * MIPI-DSI, 4 lanes ([lcd0_para] lcd_if = 4). The controller is unnamed; the
+ * driver is ours (kernel/panel-vphoto-a00zp101b187.c) and carries the vendor's
+ * init table. vcc-dsi: on the A33 that pin hangs off the 3.0 V AVCC rail.
+ */
+&dsi {
+	vcc-dsi-supply = <&reg_aldo3>;
+	status = "okay";
+
+	panel@0 {
+		compatible = "vphoto,a00zp101b187";
+		reg = <0>;
+		power-supply = <&reg_dc1sw>;		/* lcd_power = axp22_dc1sw */
+		reset-gpios = <&r_pio 0 5 GPIO_ACTIVE_LOW>; /* PL5, lcd_gpio_0 */
+		backlight = <&backlight>;
+		/* the glass is portrait-native; the page is landscape (README) */
+		rotation = <270>;
+	};
+};
+
+&i2c0 {
+	touchscreen@40 {
+		compatible = "silead,gsl1680";
+		/* cut from the vendor's gslX680new.ko by tools/gsl-fw-extract.py */
+		firmware-name = "gsl1680-vphoto-modern10elite.fw";
+		touchscreen-size-x = <800>;
+		touchscreen-size-y = <1280>;
+		/* ctp_exchange_x_y_flag = 1, ctp_revert_x_flag = 1 */
+		touchscreen-swapped-x-y;
+		touchscreen-inverted-x;
+		silead,max-fingers = <10>;
+		vddio-supply = <&reg_ldo_io1>;		/* ctp_power_ldo = axp22_ldoio1 */
+		status = "okay";
+	};
+};
+
+/*
+ * The LRADC carries no buttons on this board: its pin is the "pt3r850" analog
+ * light sensor, which the vendor read through a modified sunxi-keyboard module.
+ * Off here so lradc-keys doesn't turn light changes into volume presses; the
+ * bridge reads it instead (README, "Light sensor").
+ */
+&lradc {
+	status = "disabled";
+};
+
+&mmc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc1_pg_pins>;
+	vmmc-supply = <&reg_dldo1>;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	bus-width = <4>;
+	non-removable;
+	status = "okay";
+
+	/* RTL8723DS, SDIO 024c:d723 -> rtw88_8723ds */
+	sdio_wifi: wifi@1 {
+		reg = <1>;
+	};
+};
+
+/* No battery is fitted (AXP reports PRESENT=0): the frame is mains-only. */
+&battery_power_supply {
+	status = "disabled";
+};
+
+/* Rails as the vendor runs them ([power_sply]) where they differ from the Q8. */
+&reg_dcdc1 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "vcc-3v3";
+};
+
+&reg_aldo1 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+};
+
+&reg_dcdc5 {
+	/* DDR3L: the vendor runs VCC-DRAM at 1.35 V */
+	regulator-min-microvolt = <1350000>;
+	regulator-max-microvolt = <1350000>;
+};
+
+&reg_dldo2 {
+	/* on at 3.3 V in the vendor config, consumer unknown -- keep it on */
+	regulator-always-on;
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "vcc-dldo2";
+};
