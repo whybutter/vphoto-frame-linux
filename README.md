@@ -162,6 +162,34 @@ the card image is the output, never committed. postmarketOS was the other candid
 (Alpine underneath, same packages) but adds its own device-package workflow for no gain
 on a single board.
 
+## The shell contract, and what it costs this port
+
+The shell builds against `panels/frame/FRAME-API.md` (from the Android team's branch,
+commit 9ab4dea). Two parts of it are cheap on Android and are not cheap here:
+
+- **The page is 1280x800 landscape; the panel is 800x1280 portrait.** On Android the
+  window manager rotates. Here the rotation is ours: the DRM primary plane `rotation`
+  property, if sun4i's mixer will do 90° (unverified; the DE2 mixer may not), otherwise
+  cog's GLES renderer, which rotates its output (cog ≥ 0.14). Touch must be rotated in
+  the same direction, either with the DT `touchscreen-swapped-x-y`/`inverted-*` flags
+  or with a libinput calibration matrix. Choose one place to rotate, so touch and pixels
+  can't drift apart.
+- **`window.CortexFrame` methods are synchronous** (the shape of Android's
+  `@JavascriptInterface`). WPE only gives page→native *asynchronous* messages
+  (`window.webkit.messageHandlers.*.postMessage`). The void methods (`policy`,
+  `screenOff`, `setBrightness`, `reload`) map onto that directly. `info()` returns a
+  value, so the shell will inject a user script that keeps a JS copy of the last
+  readings, which the native side refreshes with `evaluate_javascript`, and `info()`
+  returns that copy. It's debug-only per the contract, so a value up to a second
+  old is fine.
+
+The rest maps directly: the report is a `POST` from the native half, the policy rule
+(force → motion/touch window → brightness) is a 1 s loop in the same process, "a
+touch on a dark screen wakes it and is NOT passed to the page" means the shell
+reads the touchscreen itself and only hands events to cog while the backlight is on,
+and the offline "can't reach panels" screen is a local file cog loads when the
+page's first load fails.
+
 ## What a first image does, and what comes later
 
 First image (milestones 1-2): U-Boot from TF → mainline kernel → panel lit by our
