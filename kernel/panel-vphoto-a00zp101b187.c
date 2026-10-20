@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * The 10.1" 800x1280 MIPI-DSI panel of the VPhoto "Modern 10 Elite" frame,
  * vendor name "a00zp101b187_e40".

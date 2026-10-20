@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0+
 # frame-linux boot script (mkimage -T script -> boot.scr on the card's FAT partition).
 #
 # U-Boot can't light this DSI panel, and the console pins are elsewhere, so this
