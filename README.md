@@ -356,7 +356,8 @@ so the card stays rebuildable:
   `da280` (loaded from modules-load.d: no OF table, so udev can't autoload it).
   The shell flips the page 180 degrees in CSS when the frame hangs the other way
   up (the compositor can't: wlroots maps touch straight onto the output box,
-  so only an in-page transform keeps touch with the picture). **Open**: the
-  sign. With gravity at +9.3 m/s^2 on Y the flip applies, and the owner reports
-  the page upside down both before and after it; the reading with the frame
-  hung the right way up decides it.
+  so only an in-page transform keeps touch with the picture). In the default
+  horizontal position Y reads about +9.2 m/s^2; the page flips below -5 and
+  back above +5. The first version had the sign backwards: the frame had been
+  turned midway through calibration, so the reading belonged to the other
+  position. Checked both ways on the glass.

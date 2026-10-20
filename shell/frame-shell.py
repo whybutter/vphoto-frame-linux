@@ -124,8 +124,10 @@ class Accel:
 
     Only 0 vs 180 degrees matters: the page is a fixed 1280x800 landscape, so a
     frame hung the other way up wants the same page upside down. Measured on the
-    glass: gravity reads +9.3 m/s^2 on Y with the frame upside down (the page as
-    start.sh rotates it shows inverted), and so about -9.3 hung the right way.
+    glass, in the frame's default horizontal position (where start.sh's rotation
+    is right): gravity reads about +9.2 m/s^2 on Y. Upside down is negative.
+    (The first version had this backwards -- the frame had been turned midway
+    through the calibration, so the reading was taken for the wrong position.)
     """
     FLIP_AT = 5.0  # m/s^2; between -5 and +5 (lying flat, mid-turn) keep the last
 
@@ -149,9 +151,9 @@ class Accel:
         if raw is None:
             return was
         g = int(raw) * self.scale
-        if g > self.FLIP_AT:
-            return True
         if g < -self.FLIP_AT:
+            return True
+        if g > self.FLIP_AT:
             return False
         return was
 
