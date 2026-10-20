@@ -25,7 +25,7 @@
   <div id="mid">&uarr; this side up &uarr; &mdash; touch the yellow cross<br><span id="last"></span></div>
 <script>
   var log = function (m) {
-    try { window.webkit.messageHandlers.cortex.postMessage(JSON.stringify({ m: "log", a: m })); } catch (e) {}
+    try { window.webkit.messageHandlers.frameShell.postMessage(JSON.stringify({ m: "log", a: m })); } catch (e) {}
   };
   var targets = [[80, 80], [1200, 80], [80, 720], [1200, 720], [640, 560]];
   var els = targets.map(function (p, i) {

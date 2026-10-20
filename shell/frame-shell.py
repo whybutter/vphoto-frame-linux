@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""The Linux shell for the touch frame: panels/frame/FRAME-API.md, natively.
+"""The Linux shell for the touch frame: a kiosk for any web page, and
+optionally the native half of FRAME-API (docs/FRAME-API.md).
 
 One process, run by cage (a one-window Wayland kiosk): a full-screen WebKitGTK
 view of the page, plus the native half of the contract -- the screen policy
 loop, the backlight, the touch-wakes-a-dark-screen rule, the sensor report.
+Without a FRAME-API server the same process is a plain kiosk: it shows
+FRAME_PAGE, darkens the screen after FRAME_AWAKE_S without a touch, and wakes
+on the next one.
 
 Why WebKitGTK and not cog/WPE as the README first planned: Alpine packages no
 cog and no wpewebkit at all. WebKitGTK is the same engine, packaged, with the
@@ -18,8 +22,14 @@ contract, so a second's staleness is fine).
 
 Config comes from the environment (/etc/conf.d/frame-shell, which reads the
 card's FRAMEBOOT/frame-shell.conf -- the URL and token never live in git):
-  FRAME_URL      https://<panels host>          (required)
-  FRAME_TOKEN    PANEL_TOKEN, appended as ?k=   (optional)
+  FRAME_PAGE     the page to show, any URL (a kiosk needs only this)
+  FRAME_API      https://<host> of a FRAME-API server: the page defaults to
+                 <FRAME_API>/frame, readings go to <FRAME_API>/frame/api/report
+                 and its answer is the screen policy. FRAME_URL is the old name.
+  FRAME_TOKEN    the server's token, appended as ?k= to the API page and the
+                 report (never to a FRAME_PAGE given in full)
+  FRAME_AWAKE_S  seconds of no touch before the screen goes dark, until a
+                 FRAME-API server says otherwise (default 300)
   FRAME_PIR      1 to read the PIR on PG12; this unit has none fitted (README)
   FRAME_LRADC_CH 0 or 1, which LRADC channel carries the light sensor
   FRAME_CALIBRATE 1 loads calibrate.html instead of the page: orientation
@@ -45,7 +55,9 @@ from gi.repository import GLib, Gtk, WebKit  # noqa: E402
 
 SHELL = "linux/0.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
-BASE = os.environ.get("FRAME_URL", "").rstrip("/")
+# FRAME_URL was the only setting while the page always came from a FRAME-API
+# server; it still works, as FRAME_API.
+API = (os.environ.get("FRAME_API") or os.environ.get("FRAME_URL") or "").rstrip("/")
 TOKEN = os.environ.get("FRAME_TOKEN", "")
 PIR = os.environ.get("FRAME_PIR") == "1"
 LRADC_CH = int(os.environ.get("FRAME_LRADC_CH", "0"))
@@ -57,13 +69,17 @@ BACKLIGHT = "/sys/class/backlight/backlight"
 THERMAL = "/sys/class/thermal/thermal_zone0/temp"
 PIR_GPIO = 204  # PG12, as the vendor's bl_h18l232b.ko numbered it
 
-# Defaults until panels answers (FRAME-API §4)
-DEFAULT_POLICY = {"awake_s": 300, "night": False, "force": None, "force_s": 0,
+# Defaults until a FRAME-API server answers (§4), and for good without one
+DEFAULT_POLICY = {"awake_s": int(os.environ.get("FRAME_AWAKE_S", "300")),
+                  "night": False, "force": None, "force_s": 0,
                   "brightness": None, "report_s": 60}
 
 
-def url(path):
-    return BASE + path + ("?k=" + urllib.parse.quote(TOKEN) if TOKEN else "")
+def api_url(path):
+    return API + path + ("?k=" + urllib.parse.quote(TOKEN) if TOKEN else "")
+
+
+PAGE = os.environ.get("FRAME_PAGE") or (api_url("/frame") if API else "")
 
 
 def read_text(path):
@@ -254,8 +270,8 @@ class Shell:
             "gtk-dnd-drag-threshold", int(os.environ.get("FRAME_TAP_SLOP", "40")))
         win = Gtk.ApplicationWindow(application=self.app)
         ucm = WebKit.UserContentManager()
-        ucm.register_script_message_handler("cortex", None)
-        ucm.connect("script-message-received::cortex", self.on_message)
+        ucm.register_script_message_handler("frameShell", None)
+        ucm.connect("script-message-received::frameShell", self.on_message)
         with open(os.path.join(HERE, "bridge.js")) as f:
             ucm.add_script(WebKit.UserScript.new(
                 f.read(), WebKit.UserContentInjectedFrames.TOP_FRAME,
@@ -285,16 +301,17 @@ class Shell:
         if CALIBRATE:
             self.view.load_uri("file://" + os.path.join(HERE, "calibrate.html"))
         else:
-            self.view.load_uri(url("/frame"))
+            self.view.load_uri(PAGE)
         return False
 
     def on_load_changed(self, view, event):
-        if event == WebKit.LoadEvent.FINISHED and view.get_uri().startswith(BASE):
+        if event == WebKit.LoadEvent.FINISHED and not view.get_uri().startswith("file:"):
             self.page_loaded = True
 
     def on_load_failed(self, view, event, uri, error):
-        # FRAME-API §1: our own "can't reach panels" screen, retry every ~10 s
-        if uri.startswith(BASE):
+        # FRAME-API §1: our own "can't reach the page" screen, retry every ~10 s
+        # (the shell's own pages are file: URIs; anything else is the page)
+        if not uri.startswith("file:"):
             print(f"frame-shell: page failed: {error.message}", flush=True)
             view.load_uri("file://" + os.path.join(HERE, "offline.html"))
             GLib.timeout_add_seconds(10, self.load_page)
@@ -358,8 +375,8 @@ class Shell:
                 WebKit.UserStyleLevel.USER, None, None))
         # the user stylesheet covers the next load; the page already showing
         # gets the same rule now (user stylesheets don't reach it live)
-        js = ("(function(){var s=document.getElementById('cortex-flip');"
-              "if(!s){s=document.createElement('style');s.id='cortex-flip';"
+        js = ("(function(){var s=document.getElementById('frame-flip');"
+              "if(!s){s=document.createElement('style');s.id='frame-flip';"
               "(document.head||document.documentElement).appendChild(s);}"
               "s.textContent=%s;})();" % json.dumps(self.FLIP_CSS if flipped else ""))
         self.view.evaluate_javascript(js, -1, None, None, None, None, None)
@@ -411,10 +428,10 @@ class Shell:
 
         readings = self.readings()
         self.view.evaluate_javascript(
-            "window.__cortexInfo = %s;" % json.dumps(json.dumps(readings)),
+            "window.__frameInfo = %s;" % json.dumps(json.dumps(readings)),
             -1, None, None, None, None, None)
 
-        if edge or changed or now - self.last_report >= self.policy.get("report_s", 60):
+        if API and (edge or changed or now - self.last_report >= self.policy.get("report_s", 60)):
             self.last_report = now
             threading.Thread(target=self.report, args=(readings,), daemon=True).start()
         return True
@@ -434,7 +451,7 @@ class Shell:
     def report(self, readings):
         # fire and forget; a failed report is retried at the next one (§3)
         req = urllib.request.Request(
-            url("/frame/api/report"), data=json.dumps(readings).encode(),
+            api_url("/frame/api/report"), data=json.dumps(readings).encode(),
             headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=5) as r:
@@ -445,7 +462,7 @@ class Shell:
 
 
 def main():
-    app = Gtk.Application(application_id="mx.cortex.frame")
+    app = Gtk.Application(application_id="io.github.whybutter.FrameShell")
     app.connect("activate", lambda a: Shell(a).build())
     app.run(None)
 

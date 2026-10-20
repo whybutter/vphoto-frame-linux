@@ -5,14 +5,14 @@
 (function () {
   "use strict";
   var post = function (m, a) {
-    window.webkit.messageHandlers.cortex.postMessage(JSON.stringify({ m: m, a: a }));
+    window.webkit.messageHandlers.frameShell.postMessage(JSON.stringify({ m: m, a: a }));
   };
-  window.__cortexInfo = "{}";
+  window.__frameInfo = "{}";
   window.CortexFrame = {
     policy: function (json) { post("policy", String(json)); },
     screenOff: function () { post("screenOff"); },
     setBrightness: function (level) { post("setBrightness", Number(level)); },
-    info: function () { return window.__cortexInfo; },
+    info: function () { return window.__frameInfo; },
     reload: function () { post("reload"); },
   };
   // the page is fixed-size and not a document: no selection UI, no callouts

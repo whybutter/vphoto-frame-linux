@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   var log = function (m) {
-    try { window.webkit.messageHandlers.cortex.postMessage(JSON.stringify({ m: "log", a: m })); } catch (e) {}
+    try { window.webkit.messageHandlers.frameShell.postMessage(JSON.stringify({ m: "log", a: m })); } catch (e) {}
   };
   var name = function (el) {
     if (!el || !el.tagName) return "?";

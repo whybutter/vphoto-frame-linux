@@ -1,8 +1,11 @@
-# The page's address and token are the owner's, not the repo's: they live on the
-# card's FAT next to wpa_supplicant.conf, written from the Mac or over SSH:
+# The page's address (and a token, if any) are the owner's, not the repo's: they
+# live on the card's FAT next to wpa_supplicant.conf, written from any computer
+# or over SSH:
 #   FRAMEBOOT/frame-shell.conf
-#     FRAME_URL="https://<panels host>"     (FRAME-API.md "Base URL and auth")
-#     FRAME_TOKEN="<PANEL_TOKEN>"
+#     FRAME_PAGE="https://example.org/"     a plain kiosk, or
+#     FRAME_API="https://<host>"            a FRAME-API server (docs/FRAME-API.md)
+#     FRAME_TOKEN="<token>"                 its token, if it has one
+# (all FRAME_* settings are listed at the top of shell/frame-shell.py)
 # Without it the shell doesn't start (and says so), the glass keeps the console.
 # Everything it sets is exported (set -a), so any FRAME_* switch in the shell's
 # docstring can be turned on from the card -- e.g. FRAME_DEBUG_TOUCH=1.
