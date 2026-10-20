@@ -78,14 +78,37 @@
 		compatible = "silead,gsl1680";
 		/* cut from the vendor's gslX680new.ko by tools/gsl-fw-extract.py */
 		firmware-name = "gsl1680-vphoto-modern10elite.fw";
-		touchscreen-size-x = <800>;
-		touchscreen-size-y = <1280>;
-		/* ctp_exchange_x_y_flag = 1, ctp_revert_x_flag = 1 */
-		touchscreen-swapped-x-y;
+		/*
+		 * Measured on the glass, not the vendor's flags. The vendor said
+		 * ctp_exchange_x_y_flag = 1, ctp_revert_x_flag = 1 (800x1280), which
+		 * is the mapping for Android's own rotation; under cage it put the
+		 * left third of the page at negative coordinates (touches there never
+		 * arrived) and the rest in the wrong place. Five crosshair touches
+		 * (shell/calibrate.html) fit one mapping: the firmware reports a
+		 * 1024x640 space, 0.8 of the page on both axes, mirrored on both and
+		 * not swapped, relative to the landscape picture. wlroots maps it
+		 * straight onto the 1280x800 output, so no libinput matrix is needed.
+		 */
+		touchscreen-size-x = <1024>;
+		touchscreen-size-y = <640>;
 		touchscreen-inverted-x;
+		touchscreen-inverted-y;
 		silead,max-fingers = <10>;
 		vddio-supply = <&reg_ldo_io1>;		/* ctp_power_ldo = axp22_ldoio1 */
 		status = "okay";
+	};
+};
+
+/*
+ * [gsensor_para] gsensor_twi_id = 1, gsensor_twi_addr = 0x27, "mir3da": chip id
+ * register 0x01 reads 0x13 on the frame, which is MiraMEMS DA280's -- mainline
+ * da280 (an IIO accelerometer). The i2c core matches "da280" from the
+ * compatible's suffix. The shell reads it to keep the page upright.
+ */
+&i2c1 {
+	accelerometer@27 {
+		compatible = "miramems,da280";
+		reg = <0x27>;
 	};
 };
 

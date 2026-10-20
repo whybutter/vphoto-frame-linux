@@ -347,3 +347,16 @@ so the card stays rebuildable:
   only), never in git; without it the shell says "not configured" in yellow
   and leaves the console, instead of a red ERROR.
 - FRAME-API v3.25.3: `motion` goes out as an explicit null (no PIR fitted).
+- **touch**, measured with five crosshairs on the glass (shell/calibrate.html):
+  the vendor's swap-x-y + invert-x (for Android's own rotation) put the left
+  third of the page at negative coordinates and the rest in the wrong place.
+  The firmware reports 1024x640, mirrored on both axes, not swapped; with that
+  in the DT every tap lands within finger accuracy (<= 28 px).
+- **accelerometer**: TWI1 0x27 answers chip id 0x13 = MiraMEMS DA280, mainline
+  `da280` (loaded from modules-load.d: no OF table, so udev can't autoload it).
+  The shell flips the page 180 degrees in CSS when the frame hangs the other way
+  up (the compositor can't: wlroots maps touch straight onto the output box,
+  so only an in-page transform keeps touch with the picture). **Open**: the
+  sign. With gravity at +9.3 m/s^2 on Y the flip applies, and the owner reports
+  the page upside down both before and after it; the reading with the frame
+  hung the right way up decides it.

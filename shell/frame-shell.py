@@ -24,7 +24,10 @@ card's FRAMEBOOT/frame-shell.conf -- the URL and token never live in git):
   FRAME_LRADC_CH 0 or 1, which LRADC channel carries the light sensor
   FRAME_CALIBRATE 1 loads calibrate.html instead of the page: orientation
                  marks and touch points, logged to the shell's log
+  FRAME_AUTOFLIP 0 to keep the page as start.sh rotates it, whichever way up
+                 the frame is (default 1: the accelerometer decides)
 """
+import glob
 import json
 import mmap
 import os
@@ -46,6 +49,7 @@ TOKEN = os.environ.get("FRAME_TOKEN", "")
 PIR = os.environ.get("FRAME_PIR") == "1"
 LRADC_CH = int(os.environ.get("FRAME_LRADC_CH", "0"))
 CALIBRATE = os.environ.get("FRAME_CALIBRATE") == "1"
+AUTOFLIP = os.environ.get("FRAME_AUTOFLIP", "1") == "1"
 
 BACKLIGHT = "/sys/class/backlight/backlight"
 THERMAL = "/sys/class/thermal/thermal_zone0/temp"
@@ -113,6 +117,43 @@ class Lradc:
             return None
         reg = self.DATA1 if LRADC_CH else self.DATA0
         return self.regs[self.word + reg // 4] & 0x3F
+
+
+class Accel:
+    """Which way up the frame hangs, from the DA280 accelerometer (IIO).
+
+    Only 0 vs 180 degrees matters: the page is a fixed 1280x800 landscape, so a
+    frame hung the other way up wants the same page upside down. Measured on the
+    glass: gravity reads +9.3 m/s^2 on Y with the frame upside down (the page as
+    start.sh rotates it shows inverted), and so about -9.3 hung the right way.
+    """
+    FLIP_AT = 5.0  # m/s^2; between -5 and +5 (lying flat, mid-turn) keep the last
+
+    def __init__(self):
+        self.y = self.scale = None
+        try:
+            for name in glob.glob("/sys/bus/iio/devices/iio:device*/name"):
+                if read_text(name) == "da280":
+                    d = os.path.dirname(name)
+                    self.y = os.path.join(d, "in_accel_y_raw")
+                    self.scale = float(read_text(os.path.join(d, "in_accel_scale")))
+        except (TypeError, ValueError):
+            self.y = None
+        if self.y is None:
+            print("frame-shell: no accelerometer; the page stays as start.sh rotates it", flush=True)
+
+    def upside_down(self, was):
+        if self.y is None:
+            return was
+        raw = read_text(self.y)
+        if raw is None:
+            return was
+        g = int(raw) * self.scale
+        if g > self.FLIP_AT:
+            return True
+        if g < -self.FLIP_AT:
+            return False
+        return was
 
 
 def read_pir():
@@ -189,6 +230,8 @@ class Shell:
         self.last_report = 0.0
         self.page_loaded = False
         self.lradc = Lradc()
+        self.accel = Accel() if AUTOFLIP else None
+        self.flipped = False
         self.touch = Touch(self.on_touch)
         self.max_bl = int(read_text(BACKLIGHT + "/max_brightness") or 10)
         if PIR and not os.path.exists(f"/sys/class/gpio/gpio{PIR_GPIO}"):
@@ -205,6 +248,7 @@ class Shell:
             ucm.add_script(WebKit.UserScript.new(
                 f.read(), WebKit.UserContentInjectedFrames.TOP_FRAME,
                 WebKit.UserScriptInjectionTime.START, None, None))
+        self.ucm = ucm
         self.view = WebKit.WebView(user_content_manager=ucm)
         s = self.view.get_settings()
         s.set_enable_developer_extras(False)
@@ -270,11 +314,38 @@ class Shell:
             self.policy = {**DEFAULT_POLICY, **p}
             self.policy_at = time.monotonic()
 
+    # The flip is done in the page, not the compositor: wlroots maps the
+    # touchscreen straight onto the output box, so turning the output 180
+    # degrees would leave touch where it was; WebKit's hit testing follows a
+    # CSS transform, so the touches turn with the picture.
+    FLIP_CSS = ("html { transform: rotate(180deg); transform-origin: 50% 50%;"
+                " width: 100vw; height: 100vh; overflow: hidden; }")
+
+    def set_flip(self, flipped):
+        if flipped == self.flipped:
+            return
+        self.flipped = flipped
+        self.ucm.remove_all_style_sheets()
+        if flipped:
+            self.ucm.add_style_sheet(WebKit.UserStyleSheet.new(
+                self.FLIP_CSS, WebKit.UserContentInjectedFrames.TOP_FRAME,
+                WebKit.UserStyleLevel.USER, None, None))
+        # the user stylesheet covers the next load; the page already showing
+        # gets the same rule now (user stylesheets don't reach it live)
+        js = ("(function(){var s=document.getElementById('cortex-flip');"
+              "if(!s){s=document.createElement('style');s.id='cortex-flip';"
+              "(document.head||document.documentElement).appendChild(s);}"
+              "s.textContent=%s;})();" % json.dumps(self.FLIP_CSS if flipped else ""))
+        self.view.evaluate_javascript(js, -1, None, None, None, None, None)
+        print(f"frame-shell: {'upside down, page flipped' if flipped else 'upright'}", flush=True)
+
     def on_touch(self):
         self.last_activity = time.monotonic()
         return False
 
     def want_screen(self, now):
+        if CALIBRATE:  # someone is at the glass, touching crosshairs
+            return True
         p = self.policy
         if p.get("force") in ("on", "off") and now - self.policy_at < (p.get("force_s") or 0):
             return p["force"] == "on"
@@ -297,6 +368,8 @@ class Shell:
 
     def tick(self):
         now = time.monotonic()
+        if self.accel:
+            self.set_flip(self.accel.upside_down(self.flipped))
         motion = read_pir()
         edge = motion is not None and motion != self.motion
         self.motion = motion

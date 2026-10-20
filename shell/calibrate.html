@@ -1,38 +1,53 @@
 <!doctype html>
-<!-- FRAME_CALIBRATE=1: which way is up, and where touches land. Every touch is
-     logged to /var/log/frame-shell.log as page coordinates, so rotation (start.sh)
-     and the touchscreen flags (the dts) can be checked from SSH with the owner
-     touching the corners. -->
+<!-- FRAME_CALIBRATE=1: which way is up, and where touches land. Five crosshairs
+     at known page coordinates, touched in order; every touch is logged to
+     /var/log/frame-shell.log with the target it was meant for, so the touch
+     calibration (a libinput matrix, see README) can be fitted from SSH. -->
 <html>
 <head>
 <meta charset="utf-8">
 <title>calibrate</title>
 <style>
   html, body { margin: 0; width: 100%; height: 100%; background: #111; color: #eee;
-               font: 28px "DejaVu Sans", sans-serif; overflow: hidden; }
-  .c { position: absolute; padding: 12px; font-size: 40px; }
-  #tl { top: 0; left: 0; } #tr { top: 0; right: 0; }
-  #bl { bottom: 0; left: 0; } #br { bottom: 0; right: 0; }
-  #mid { position: absolute; top: 40%; width: 100%; text-align: center; }
-  .dot { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+               font: 26px "DejaVu Sans", sans-serif; overflow: hidden; }
+  .t { position: absolute; width: 0; height: 0; }
+  .t::before, .t::after { content: ""; position: absolute; background: #0cf; }
+  .t::before { left: -30px; top: -1px; width: 60px; height: 3px; }
+  .t::after { left: -1px; top: -30px; width: 3px; height: 60px; }
+  .t span { position: absolute; left: 14px; top: 10px; color: #0cf; }
+  .t.next::before, .t.next::after { background: #ff0; } .t.next span { color: #ff0; }
+  #mid { position: absolute; top: 46%; width: 100%; text-align: center; }
+  .dot { position: absolute; width: 24px; height: 24px; margin: -12px 0 0 -12px;
          border-radius: 50%; background: #f80; }
 </style>
 </head>
 <body>
-  <div class="c" id="tl">1 TOP LEFT</div><div class="c" id="tr">2 TOP RIGHT</div>
-  <div class="c" id="bl">3 BOTTOM LEFT</div><div class="c" id="br">4 BOTTOM RIGHT</div>
-  <div id="mid">&uarr; this side up &uarr;<br><span id="size"></span><br><span id="last"></span></div>
+  <div id="mid">&uarr; this side up &uarr; &mdash; touch the yellow cross<br><span id="last"></span></div>
 <script>
   var log = function (m) {
     try { window.webkit.messageHandlers.cortex.postMessage(JSON.stringify({ m: "log", a: m })); } catch (e) {}
   };
-  document.getElementById("size").textContent = innerWidth + " x " + innerHeight;
+  var targets = [[80, 80], [1200, 80], [80, 720], [1200, 720], [640, 560]];
+  var els = targets.map(function (p, i) {
+    var d = document.createElement("div"); d.className = "t";
+    d.style.left = p[0] + "px"; d.style.top = p[1] + "px";
+    d.innerHTML = "<span>" + (i + 1) + "</span>"; document.body.appendChild(d); return d;
+  });
+  var n = 0; els[0].classList.add("next");
   log("viewport " + innerWidth + "x" + innerHeight);
+  // what the shell's flip actually did to this page
+  var lastT = null;
+  setInterval(function () {
+    var t = getComputedStyle(document.documentElement).transform;
+    if (t !== lastT) { lastT = t; log("html transform " + t); }
+  }, 1000);
   var mark = function (x, y, how) {
     var d = document.createElement("div"); d.className = "dot";
     d.style.left = x + "px"; d.style.top = y + "px"; document.body.appendChild(d);
-    var t = how + " " + Math.round(x) + "," + Math.round(y);
-    document.getElementById("last").textContent = t; log(t);
+    var t = targets[n % targets.length];
+    var s = how + " target " + (n % targets.length + 1) + " " + t[0] + "," + t[1] + " got " + Math.round(x) + "," + Math.round(y);
+    document.getElementById("last").textContent = s; log(s);
+    els[n % targets.length].classList.remove("next"); n++; els[n % targets.length].classList.add("next");
   };
   addEventListener("touchstart", function (e) {
     for (var i = 0; i < e.changedTouches.length; i++) mark(e.changedTouches[i].clientX, e.changedTouches[i].clientY, "touch");
