@@ -14,8 +14,19 @@ adb (`cat`, `dumpsys`, `/sys/kernel/debug`), never from a write.
 
 Status (2026-10-19): Phase 1 done; the owner approved the direction. Phase 2 builds
 U-Boot, the kernel (with our panel driver and board DT), an Alpine rootfs and the card
-image, all reproducibly in Docker (see "Building"). **Nothing has run on the frame
-yet**: milestones 1-2 are waiting on a card in the slot.
+image, all reproducibly in Docker (see "Building"). ~~**Nothing has run on the frame
+yet**: milestones 1-2 are waiting on a card in the slot.~~
+
+2026-10-20, first card test (`frame-linux-full.img`, sha256 f47b62cd…): the BROM
+booted the card, the kernel came up and **the panel works** — a login prompt on the
+glass, so U-Boot, our panel driver, DSI and fbcon are right first time (M1+M2
+display). The USB network didn't: the gadget enumerated as "RNDIS/Ethernet Gadget",
+macOS has no RNDIS driver and made no interface. The kernel now builds g_ether with
+ECM only (kernel/frame.config); the fix is the new zImage alone, copied onto
+FRAMEBOOT — same release string (6.18.57-frame) and no MODVERSIONS, so the modules
+already on the card still load, and the dtb is byte-identical to the card's.
+There is no console login on purpose (root is locked, the frame has no keyboard):
+the ways in are SSH over USB or Wi-Fi.
 
 ```
 tools/bin2fex.py            script.bin -> .fex (sunxi-tools' bin2fex, rewritten in 60

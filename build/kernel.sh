@@ -32,7 +32,10 @@ make -s O=$obj olddefconfig
 # a symbol that didn't survive the merge is a build that boots dark: fail here
 sed -n 's/^# \(CONFIG_[A-Z0-9_]*\) is not set$/\1=n/p; /^CONFIG_/p' /work/kernel/frame.config |
 while IFS= read -r want; do
-  grep -qx "$want" $obj/.config || { echo "not applied: $want"; exit 1; }
+  case "$want" in
+    *=n) key=${want%=n}; ! grep -q "^$key=" $obj/.config || { echo "still set: $key"; exit 1; } ;;
+    *) grep -qx "$want" $obj/.config || { echo "not applied: $want"; exit 1; } ;;
+  esac
 done
 
 make -s O=$obj -j"$(nproc)" zImage modules allwinner/$board.dtb
