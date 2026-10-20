@@ -15,14 +15,20 @@ depend() {
 	after networking
 }
 
-start_pre() {
-	# Opt-in from the Mac while the hardware is being brought up: cage takes the
-	# glass, and with it the login prompt that frame-diag's status block sits
-	# above. `touch /Volumes/FRAMEBOOT/frame-shell.enable` turns the page on.
-	if [ ! -e /boot/frame-shell.enable ]; then
-		einfo "frame-shell off (no /boot/frame-shell.enable)"
-		return 1
+# Not configured (no FRAMEBOOT/frame-shell.conf) is a choice, not a failure:
+# say so and leave the glass to the console. (It used to fail start_pre, which
+# printed a red ERROR on the glass for a deliberately disabled service.)
+start() {
+	if [ -z "$FRAME_URL" ] && [ "$FRAME_CALIBRATE" != 1 ]; then
+		ewarn "frame-shell: not configured (no FRAMEBOOT/frame-shell.conf), console stays"
+		return 0
 	fi
-	export XDG_RUNTIME_DIR=/run/frame-shell
+	export XDG_RUNTIME_DIR
 	mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+	default_start
+}
+
+stop() {
+	[ -z "$FRAME_URL" ] && [ "$FRAME_CALIBRATE" != 1 ] && return 0
+	default_stop
 }

@@ -44,7 +44,7 @@ check "password login refused"          "! $ssh -o PubkeyAuthentication=no root@
 check "authorized_keys 600, dirs 700"   "[ \$(stat -c %a /r/root) = 700 ] && [ \$(stat -c %a /r/root/.ssh) = 700 ] && [ \$(stat -c %a /r/root/.ssh/authorized_keys) = 600 ]"
 check "wpa conf link resolves"          "chroot /r test -f /etc/wpa_supplicant/wpa_supplicant.conf"
 check "wpa_supplicant supervised"       "chroot /r rc-service wpa_supplicant status"
-check "frame-shell off without flag"    "grep -q 'frame-shell off' $w/openrc.log"
+check "frame-shell idle, not an error"  "grep -q 'frame-shell: not configured' $w/openrc.log && ! grep -q 'ERROR: frame-shell' $w/openrc.log"
 check "diag early.txt + boot.txt"       "[ -s /r/boot/diag/early.txt ] && [ -s /r/boot/diag/boot.txt ]"
 check "status block in /etc/issue"      "grep -q 'ssh root@192.168.7.2' /r/etc/issue"
 check "no ssid/psk in diag or issue"    "! grep -rq 'TESTNET\|notreal123' /r/boot/diag /r/etc/issue"

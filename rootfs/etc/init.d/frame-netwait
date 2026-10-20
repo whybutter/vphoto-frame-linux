@@ -8,7 +8,7 @@ description="wait for usb0 and wlan0 before networking"
 
 depend() {
 	need localmount
-	after hwdrivers modules
+	after udev-settle hwdrivers modules
 	before networking wpa_supplicant usb-dhcpd
 }
 

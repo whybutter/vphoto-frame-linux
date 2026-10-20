@@ -1,9 +1,16 @@
-# FRAME-API.md "Base URL and auth". Dev panels runs on the Mac with no token.
-export FRAME_URL="http://<panels-host>:8902"
-export FRAME_TOKEN=""
+# The page's address and token are the owner's, not the repo's: they live on the
+# card's FAT next to wpa_supplicant.conf, written from the Mac or over SSH:
+#   FRAMEBOOT/frame-shell.conf
+#     FRAME_URL="https://<panels host>"     (FRAME-API.md "Base URL and auth")
+#     FRAME_TOKEN="<PANEL_TOKEN>"
+# Without it the shell doesn't start (and says so), the glass keeps the console.
+[ -r /boot/frame-shell.conf ] && . /boot/frame-shell.conf
+export FRAME_URL FRAME_TOKEN
 # wlr-randr transform for the landscape page on the portrait glass (start.sh)
-export FRAME_ROTATE="90"
+export FRAME_ROTATE="${FRAME_ROTATE:-90}"
 # the PIR isn't fitted on this unit (README); 1 would read PG12
-export FRAME_PIR="0"
-export FRAME_LRADC_CH="0"
+export FRAME_PIR="${FRAME_PIR:-0}"
+export FRAME_LRADC_CH="${FRAME_LRADC_CH:-0}"
+# 1: calibrate.html instead of the page (rotation and touch check)
+export FRAME_CALIBRATE="${FRAME_CALIBRATE:-0}"
 export XDG_RUNTIME_DIR=/run/frame-shell

@@ -16,16 +16,18 @@ nothing are fire-and-forget anyway; `info()` returns a JS-side copy of the
 readings that this process refreshes every second (debug-only per the
 contract, so a second's staleness is fine).
 
-Config comes from the environment (/etc/conf.d/frame-shell):
-  FRAME_URL      http://<panels-host>:8902      (required)
+Config comes from the environment (/etc/conf.d/frame-shell, which reads the
+card's FRAMEBOOT/frame-shell.conf -- the URL and token never live in git):
+  FRAME_URL      https://<panels host>          (required)
   FRAME_TOKEN    PANEL_TOKEN, appended as ?k=   (optional)
   FRAME_PIR      1 to read the PIR on PG12; this unit has none fitted (README)
   FRAME_LRADC_CH 0 or 1, which LRADC channel carries the light sensor
+  FRAME_CALIBRATE 1 loads calibrate.html instead of the page: orientation
+                 marks and touch points, logged to the shell's log
 """
 import json
 import mmap
 import os
-import struct
 import threading
 import time
 import urllib.parse
@@ -37,12 +39,13 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("WebKit", "6.0")
 from gi.repository import GLib, Gtk, WebKit  # noqa: E402
 
-SHELL = "linux/0.1.0"
+SHELL = "linux/0.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
-BASE = os.environ["FRAME_URL"].rstrip("/")
+BASE = os.environ.get("FRAME_URL", "").rstrip("/")
 TOKEN = os.environ.get("FRAME_TOKEN", "")
 PIR = os.environ.get("FRAME_PIR") == "1"
 LRADC_CH = int(os.environ.get("FRAME_LRADC_CH", "0"))
+CALIBRATE = os.environ.get("FRAME_CALIBRATE") == "1"
 
 BACKLIGHT = "/sys/class/backlight/backlight"
 THERMAL = "/sys/class/thermal/thermal_zone0/temp"
@@ -79,29 +82,37 @@ class Lradc:
     Mainline only has lradc-keys (disabled in our DT, it would turn light into
     volume presses), so the registers are read through /dev/mem. 6-bit reading,
     0..63, uncalibrated -- trends, not lux, as the contract says.
+
+    Registers are touched only as whole aligned 32-bit words, through a
+    memoryview cast to "I". The first version used struct.pack_into, whose
+    4-byte copy came out as byte + odd-address halfword + byte; device memory
+    faults on the unaligned halfword ("Alignment trap: not handling instruction
+    f8a03001"), the SIGBUS killed python, cage exited with its only client, and
+    supervise-daemon restarted it every ~10 s -- the glass flashed between the
+    page and the console.
     """
     BASE = 0x01C22800
     CTRL, DATA0, DATA1 = 0x00, 0x0C, 0x10
 
     def __init__(self):
-        self.mem = None
+        self.regs = None
         try:
             fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
             page = self.BASE & ~(mmap.PAGESIZE - 1)
-            self.off = self.BASE - page
             self.mem = mmap.mmap(fd, mmap.PAGESIZE, offset=page)
             os.close(fd)
+            self.regs = memoryview(self.mem).cast("I")
+            self.word = (self.BASE - page) // 4
             # continuous mode, both channels, enabled (bit names from sun4i-lradc-keys.c)
-            ctrl = (2 << 24) | (3 << 22) | (2 << 12) | (0 << 2) | 1
-            struct.pack_into("<I", self.mem, self.off + self.CTRL, ctrl)
+            self.regs[self.word + self.CTRL // 4] = (2 << 24) | (3 << 22) | (2 << 12) | 1
         except OSError as e:
             print(f"frame-shell: no LRADC ({e}); lux won't be reported", flush=True)
 
     def read(self):
-        if self.mem is None:
+        if self.regs is None:
             return None
         reg = self.DATA1 if LRADC_CH else self.DATA0
-        return struct.unpack_from("<I", self.mem, self.off + reg)[0] & 0x3F
+        return self.regs[self.word + reg // 4] & 0x3F
 
 
 def read_pir():
@@ -209,7 +220,10 @@ class Shell:
 
     def load_page(self):
         self.page_loaded = False
-        self.view.load_uri(url("/frame"))
+        if CALIBRATE:
+            self.view.load_uri("file://" + os.path.join(HERE, "calibrate.html"))
+        else:
+            self.view.load_uri(url("/frame"))
         return False
 
     def on_load_changed(self, view, event):
@@ -241,6 +255,8 @@ class Shell:
             self.page_brightness = float(a)
         elif m == "reload":
             self.view.reload()
+        elif m == "log":  # calibrate.html
+            print(f"frame-shell: page: {a}", flush=True)
 
     # --- policy (FRAME-API §4) ---------------------------------------------
 
@@ -310,9 +326,11 @@ class Shell:
              "lux": self.lradc.read(),
              "soc_temp": None if t is None else round(int(t) / 1000, 1),
              "uptime": int(time.monotonic())}
-        if self.motion is not None:
-            r["motion"] = self.motion
-        return {k: v for k, v in r.items() if v is not None}
+        r = {k: v for k, v in r.items() if v is not None}
+        # FRAME-API §3 (v3.25.3): no PIR is an explicit null -- HA shows the
+        # motion sensor as unavailable, never as a permanent "nobody here"
+        r["motion"] = self.motion
+        return r
 
     def report(self, readings):
         # fire and forget; a failed report is retried at the next one (§3)

@@ -322,3 +322,28 @@ takes the key from `out/authorized_keys`.
 Until milestone 2, the only signals are the backlight and USB. The milestone requests
 to the owner will spell out each step, always starting with `diskutil list` — the Mac
 has other USB storage attached, so no `dd of=` is ever written without that check.
+
+### Fourth card test and on, over SSH (2026-10-20)
+
+Boot 4: no abort; usb0 192.168.7.2 with the Mac at .1, wlan0 on the LAN, SSH
+over both. From here the work is over SSH, and each fix also lands in the repo
+so the card stays rebuildable:
+- **soc_temp**: no thermal zone existed. The A33's sensor is the GPADC's
+  ("allwinner,sun8i-a33-ths"), not sun8i-thermal's; CONFIG_SUN4I_GPADC adds the
+  cpu-thermal zone (~48 C idle).
+- **udev replaces mdev**: libinput finds devices only through udev; under mdev
+  cage saw no touchscreen and wouldn't start. (This retires the mdev note above.)
+- **the flashing glass**: the shell's LRADC code wrote registers with
+  struct.pack_into, which copies 4 bytes as byte + odd-address halfword + byte;
+  device memory faults on that halfword, python died of SIGBUS, cage with it,
+  and supervise-daemon restarted it every ~10 s. Registers are now only
+  touched as aligned words (memoryview cast "I").
+- **WebKit's sandbox**: bubblewrap needs user and IPC namespaces; the IPC one
+  needs SysV IPC. All three added to the kernel instead of disabling the sandbox.
+- GTK4 can't get a GL context on lima (GLES 2 only; GTK's GL renderer wants
+  GLES 3), so GTK draws in software. Whether that is fast enough for the page
+  is milestone 4's measurement. Idle with the page: ~280 MB of 1 GB in use.
+- the page's URL and token live on the card (FRAMEBOOT/frame-shell.conf, root
+  only), never in git; without it the shell says "not configured" in yellow
+  and leaves the console, instead of a red ERROR.
+- FRAME-API v3.25.3: `motion` goes out as an explicit null (no PIR fitted).

@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- FRAME_CALIBRATE=1: which way is up, and where touches land. Every touch is
+     logged to /var/log/frame-shell.log as page coordinates, so rotation (start.sh)
+     and the touchscreen flags (the dts) can be checked from SSH with the owner
+     touching the corners. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>calibrate</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #111; color: #eee;
+               font: 28px "DejaVu Sans", sans-serif; overflow: hidden; }
+  .c { position: absolute; padding: 12px; font-size: 40px; }
+  #tl { top: 0; left: 0; } #tr { top: 0; right: 0; }
+  #bl { bottom: 0; left: 0; } #br { bottom: 0; right: 0; }
+  #mid { position: absolute; top: 40%; width: 100%; text-align: center; }
+  .dot { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+         border-radius: 50%; background: #f80; }
+</style>
+</head>
+<body>
+  <div class="c" id="tl">1 TOP LEFT</div><div class="c" id="tr">2 TOP RIGHT</div>
+  <div class="c" id="bl">3 BOTTOM LEFT</div><div class="c" id="br">4 BOTTOM RIGHT</div>
+  <div id="mid">&uarr; this side up &uarr;<br><span id="size"></span><br><span id="last"></span></div>
+<script>
+  var log = function (m) {
+    try { window.webkit.messageHandlers.cortex.postMessage(JSON.stringify({ m: "log", a: m })); } catch (e) {}
+  };
+  document.getElementById("size").textContent = innerWidth + " x " + innerHeight;
+  log("viewport " + innerWidth + "x" + innerHeight);
+  var mark = function (x, y, how) {
+    var d = document.createElement("div"); d.className = "dot";
+    d.style.left = x + "px"; d.style.top = y + "px"; document.body.appendChild(d);
+    var t = how + " " + Math.round(x) + "," + Math.round(y);
+    document.getElementById("last").textContent = t; log(t);
+  };
+  addEventListener("touchstart", function (e) {
+    for (var i = 0; i < e.changedTouches.length; i++) mark(e.changedTouches[i].clientX, e.changedTouches[i].clientY, "touch");
+    e.preventDefault();
+  }, { passive: false });
+  addEventListener("mousedown", function (e) { mark(e.clientX, e.clientY, "mouse"); });
+</script>
+</body>
+</html>

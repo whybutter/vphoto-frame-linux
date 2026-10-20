@@ -24,7 +24,7 @@ apk add -q --root $root --initdb --arch armv7 --no-cache \
   alpine-base openrc busybox-openrc busybox-extras \
   dropbear dropbear-openrc wpa_supplicant wpa_supplicant-openrc \
   chrony chrony-openrc iw linux-firmware-rtw88 wireless-regdb \
-  e2fsprogs dosfstools \
+  e2fsprogs dosfstools eudev udev-init-scripts udev-init-scripts-openrc \
   cage seatd seatd-openrc wlr-randr mesa-dri-gallium mesa-egl mesa-gles \
   webkit2gtk-6.0 python3 py3-gobject3 py3-evdev font-dejavu
 
@@ -35,7 +35,7 @@ cp -a /work/rootfs/. $root/
 tar -C $root -xzf $out/modules.tar.gz
 cp -a $out/firmware/. $root/lib/firmware/
 install -d $root/usr/lib/frame-shell
-install -m 644 /work/shell/frame-shell.py /work/shell/bridge.js /work/shell/offline.html $root/usr/lib/frame-shell/
+install -m 644 /work/shell/frame-shell.py /work/shell/bridge.js /work/shell/offline.html /work/shell/calibrate.html $root/usr/lib/frame-shell/
 install -m 755 /work/shell/start.sh $root/usr/lib/frame-shell/
 install -d -m 700 $root/root/.ssh
 install -m 600 $out/authorized_keys $root/root/.ssh/authorized_keys
@@ -52,9 +52,13 @@ sed -i 's|^#\?rc_logger=.*|rc_logger="YES"|' $root/etc/rc.conf
 grep -qx 'rc_logger="YES"' $root/etc/rc.conf
 
 chroot $root /bin/sh -e <<'EOF'
-for s in devfs dmesg mdev hwdrivers; do rc-update -q add $s sysinit; done
+# udev, not mdev: wlroots finds input devices through libinput, and libinput
+# only through udev -- under mdev cage saw no touchscreen ("libinput
+# initialization failed, no input devices") and wouldn't start. udev also does
+# the module autoloading hwdrivers did, and real hotplug.
+for s in devfs dmesg udev udev-trigger udev-settle; do rc-update -q add $s sysinit; done
 for s in modules sysctl hostname localmount bootmisc syslog swclock seedrng frame-diag-early; do rc-update -q add $s boot; done
-for s in frame-netwait networking wpa_supplicant dropbear chronyd usb-dhcpd seatd frame-shell frame-diag; do rc-update -q add $s default; done
+for s in udev-postmount frame-netwait networking wpa_supplicant dropbear chronyd usb-dhcpd seatd frame-shell frame-diag; do rc-update -q add $s default; done
 for s in mount-ro killprocs savecache; do rc-update -q add $s shutdown; done
 EOF
 
