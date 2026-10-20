@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+# First report, as soon as the card's FAT is mounted (boot runlevel): if the
+# default runlevel never finishes, this one still tells us how far it got.
+description="frame-diag: early boot report to /boot/diag/early.txt"
+
+depend() {
+	need localmount
+	after bootmisc modules syslog
+}
+
+start() {
+	ebegin "frame-diag early report"
+	/usr/lib/frame-diag/diag.sh early
+	eend 0
+}

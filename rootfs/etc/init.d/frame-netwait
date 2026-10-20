@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# networking runs `ifup` once; an interface that doesn't exist yet at that
+# moment is simply never brought up (offline: `ifup wlan0` with no wlan0 fails
+# with "No such device" and nothing retries). usb0 (g_ether, built in) and
+# wlan0 (rtw88_8723ds, a module plus a firmware load over SDIO) can both lag
+# the runlevel, so wait for them here -- bounded, and never failing the boot.
+description="wait for usb0 and wlan0 before networking"
+
+depend() {
+	need localmount
+	after udev-settle hwdrivers modules
+	before networking wpa_supplicant usb-dhcpd
+}
+
+start() {
+	ebegin "Waiting for usb0 and wlan0"
+	modprobe -q rtw88_8723ds
+	i=0
+	while [ $i -lt 30 ]; do
+		[ -e /sys/class/net/usb0 ] && [ -e /sys/class/net/wlan0 ] && break
+		sleep 1; i=$((i + 1))
+	done
+	for n in usb0 wlan0; do
+		[ -e /sys/class/net/$n ] && einfo "$n present after ${i}s" || ewarn "$n missing after ${i}s"
+	done
+	eend 0
+}

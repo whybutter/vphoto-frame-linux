@@ -1,0 +1,34 @@
+#!/sbin/openrc-run
+# The page full-screen: cage (Wayland kiosk) running shell/start.sh.
+# Runs as root for now: it writes the backlight, grabs the touchscreen and maps
+# the LRADC through /dev/mem. A single-purpose box, but a candidate for a
+# dedicated user + udev rules once the hardware is proven.
+supervisor=supervise-daemon
+command=/usr/bin/cage
+command_args="-s -- /usr/lib/frame-shell/start.sh"
+output_log=/var/log/frame-shell.log
+error_log=/var/log/frame-shell.log
+respawn_delay=5
+
+depend() {
+	need seatd localmount
+	after networking
+}
+
+# Not configured (no FRAMEBOOT/frame-shell.conf) is a choice, not a failure:
+# say so and leave the glass to the console. (It used to fail start_pre, which
+# printed a red ERROR on the glass for a deliberately disabled service.)
+start() {
+	if [ -z "$FRAME_PAGE$FRAME_API$FRAME_URL" ] && [ "$FRAME_CALIBRATE" != 1 ]; then
+		ewarn "frame-shell: not configured (no FRAMEBOOT/frame-shell.conf), console stays"
+		return 0
+	fi
+	export XDG_RUNTIME_DIR
+	mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+	default_start
+}
+
+stop() {
+	[ -z "$FRAME_PAGE$FRAME_API$FRAME_URL" ] && [ "$FRAME_CALIBRATE" != 1 ] && return 0
+	default_stop
+}

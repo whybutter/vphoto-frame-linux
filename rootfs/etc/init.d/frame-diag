@@ -1,0 +1,17 @@
+#!/sbin/openrc-run
+# The boot report once everything else has started (so /etc/issue carries the
+# status block when getty draws the login prompt), then snapshots at 60 s,
+# 180 s and every 10 min (loop.sh). Never fails the runlevel.
+description="frame-diag: boot report and periodic snapshots to /boot/diag/"
+supervisor=supervise-daemon
+command=/usr/lib/frame-diag/loop.sh
+
+depend() {
+	need localmount
+	after *
+}
+
+start_pre() {
+	/usr/lib/frame-diag/diag.sh boot
+	return 0
+}

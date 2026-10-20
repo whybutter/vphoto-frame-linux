@@ -1,0 +1,4 @@
+# Nothing in fstab asks for a check (see /etc/fstab); if something ever does
+# and it fails, carry on booting rather than rc-abort -- a frame that comes up
+# can be looked at, one that stops at fsck can't (third card test).
+fsck_abort_on_errors="no"

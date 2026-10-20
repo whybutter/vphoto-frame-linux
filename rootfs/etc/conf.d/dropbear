@@ -1,0 +1,2 @@
+# keys only, no passwords (root's password is locked)
+DROPBEAR_OPTS="-s"

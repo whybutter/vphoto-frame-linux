@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+# Hands the Mac an address on the USB gadget link (/etc/udhcpd.conf), so the
+# frame is reachable at 192.168.7.2 even when Wi-Fi isn't up.
+#
+# Second card test: the Mac saw the ECM gadget but "inactive" (no carrier). On
+# ECM the gadget only reports a connection once usb0 is opened (ifup'd), so
+# usb0 was never brought up. This used to `need net`, which ties it to the whole
+# networking service (and to wlan0); now it brings usb0 up itself if it isn't,
+# and only orders itself after networking.
+supervisor=supervise-daemon
+command=/usr/sbin/udhcpd
+command_args="-f /etc/udhcpd.conf"
+respawn_delay=3
+respawn_max=0
+
+depend() {
+	need localmount
+	after networking frame-netwait
+}
+
+start_pre() {
+	ip link set usb0 up || return 1
+	ip -4 addr show dev usb0 | grep -q 192.168.7.2/ || ip addr add 192.168.7.2/24 dev usb0
+	touch /var/run/udhcpd.leases
+}

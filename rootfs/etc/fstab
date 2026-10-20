@@ -1,0 +1,17 @@
+# The card only. The eMMC (mmc2) isn't even enabled in the device tree.
+#
+# By LABEL, not PARTUUID: the kernel resolves root=PARTUUID itself, but
+# userspace here is busybox + mdev, which makes no /dev/disk/by-partuuid links.
+# Third card test: fsck.fat was handed "PARTUUID=f4a3e001-01" as a path, failed,
+# and OpenRC's fsck aborted the boot runlevel (rc-abort) -- so networking,
+# dropbear, wpa_supplicant and frame-diag never ran on any of the first three
+# boots. Not a device path either: the card came up as mmcblk1, so the numbering
+# follows probe order and isn't ours to rely on. busybox mount resolves LABEL
+# from /proc/partitions without any links.
+#
+# fsck pass 0 for both: root is ext4 with a journal, already mounted rw by the
+# kernel; /boot is the FAT the Mac writes to, and a dirty bit there must never
+# stop the frame from coming up. nofail on /boot for the same reason.
+LABEL=frameroot	/	ext4	rw,noatime	0 0
+LABEL=FRAMEBOOT	/boot	vfat	rw,noatime,nofail,fmask=0177,dmask=0077	0 0
+tmpfs	/tmp	tmpfs	nosuid,nodev	0 0

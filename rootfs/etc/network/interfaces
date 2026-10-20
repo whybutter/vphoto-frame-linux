@@ -1,0 +1,16 @@
+# wlan0: the LAN, credentials in /boot/wpa_supplicant.conf (the card's FAT
+# partition, so they can be written from the Mac and never live in this repo).
+# usb0: the OTG port as a USB Ethernet gadget -- the same cable adb uses under
+# Android. The frame is 192.168.7.2 and hands the Mac 192.168.7.1 by DHCP, so
+# `ssh root@192.168.7.2` works with Wi-Fi down.
+auto lo
+iface lo inet loopback
+
+auto usb0
+iface usb0 inet static
+	address 192.168.7.2
+	netmask 255.255.255.0
+
+auto wlan0
+iface wlan0 inet dhcp
+	hostname vphoto-modern10elite
