@@ -373,3 +373,8 @@ so the card stays rebuildable:
   gtk-dnd-drag-threshold at 40 (FRAME_TAP_SLOP) 17 of 17 taps clicked. Left
   over: the click lands where the finger lifted, so a drift can still pick a
   neighbouring small button -- a stabilizing evdev proxy would fix that.
+- **dark and wake**, checked on the glass: the backlight goes off 5 min after
+  the last touch, and a tap on a tile wakes it without toggling the tile (the
+  shell holds an EVIOCGRAB on the touchscreen while dark). HA, checked by the
+  orchestrator: screen/soc_temp/illuminance arrive, motion is `unavailable`.
+  **Milestones 3 and 4 done.**
