@@ -26,8 +26,17 @@ docker build -q -t frame-linux-build "$here/build" >/dev/null
 step=${1:-}
 [ -n "$step" ] || { sed -n '4,15p' "$0"; exit 1; }
 shift
-# The eMMC backup, read-only: the vendor step cuts blobs out of it.
-backup=${FRAME_BACKUP:-./backup/partitions}
+# Your own frame's files, read-only: the vendor step cuts the touch firmware out
+# of them (README, "The touch firmware"). ./backup unless FRAME_BACKUP says
+# otherwise; it holds gslX680new.ko, or the whole Android system.img.
+backup=${FRAME_BACKUP:-$here/backup}
+mkdir -p "$backup"
+# The SSH key(s) the image will let in as root: FRAME_SSH_KEYS=<file> (an
+# authorized_keys-style file, e.g. ~/.ssh/id_ed25519.pub), copied to
+# out/authorized_keys for the rootfs step. Never committed.
+if [ -n "${FRAME_SSH_KEYS:-}" ]; then
+  mkdir -p "$here/out" && cp "$FRAME_SSH_KEYS" "$here/out/authorized_keys"
+fi
 vols="-v $here:/work -v frame-linux-cache:/cache -v $backup:/backup:ro"
 if [ "$step" = rootfs ]; then
   # apk's post-install scripts are armv7 binaries; Apple silicon can't run AArch32,

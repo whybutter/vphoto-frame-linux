@@ -5,7 +5,7 @@
 #   rootfs/                     overlay, committed (network, fstab, init scripts)
 #   out/modules.tar.gz          from `kernel`
 #   out/firmware/               from `vendor` (touch firmware, cut from the backup)
-#   out/authorized_keys         the Mac's public key(s); never committed
+#   out/authorized_keys         your public key(s), from FRAME_SSH_KEYS; never committed
 # Packages come from the pinned Alpine branch; the exact set that landed is
 # written to out/rootfs.packages so two builds can be diffed.
 set -eu
@@ -14,7 +14,7 @@ out=/work/out
 root=/tmp/rootfs
 size_mb=${ROOTFS_MB:-1536}
 
-[ -s $out/authorized_keys ] || { echo "out/authorized_keys missing (cp ~/.ssh/id_*.pub out/authorized_keys)"; exit 1; }
+[ -s $out/authorized_keys ] || { echo "no SSH key: FRAME_SSH_KEYS=~/.ssh/id_ed25519.pub ./build.sh rootfs"; exit 1; }
 
 rm -rf $root && mkdir -p $root/etc/apk
 cp -r /etc/apk/keys $root/etc/apk/
